@@ -1,5 +1,19 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { authMiddleware } = require('../middleware/auth');
+
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (_, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random()*1e6)}${path.extname(file.originalname)}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => cb(null, /image\/(jpeg|jpg|png|gif|webp)/i.test(file.mimetype)),
+});
 
 module.exports = function (db) {
   const router = express.Router();
@@ -119,7 +133,7 @@ module.exports = function (db) {
 
   // ── POST /api/sms/send ─────────────────────────────────────────────
   router.post('/send', authMiddleware, async (req, res) => {
-    const { driver_id, phone: rawPhone, name: rawName, body } = req.body;
+    const { driver_id, phone: rawPhone, name: rawName, body, media_url } = req.body;
     if (!body?.trim()) return res.status(400).json({ error: 'Message body is required' });
     if (!driver_id && !rawPhone) return res.status(400).json({ error: 'Provide driver_id or phone number' });
 
@@ -157,9 +171,9 @@ module.exports = function (db) {
 
     // Save to DB first — history is preserved even if Twilio delivery fails
     const result = db.prepare(`
-      INSERT INTO sms_messages (driver_id, phone_to, contact_name, direction, body, status, twilio_sid, recruiter_id)
-      VALUES (?, ?, ?, 'outbound', ?, 'queued', NULL, ?)
-    `).run(driver?.id || null, toPhone, driver ? null : recipientName, finalBody, req.user.id);
+      INSERT INTO sms_messages (driver_id, phone_to, contact_name, direction, body, status, twilio_sid, recruiter_id, media_urls)
+      VALUES (?, ?, ?, 'outbound', ?, 'queued', NULL, ?, ?)
+    `).run(driver?.id || null, toPhone, driver ? null : recipientName, finalBody, req.user.id, media_url ? JSON.stringify([media_url]) : null);
 
     const msgId = result.lastInsertRowid;
     let status = 'sent';
@@ -168,7 +182,9 @@ module.exports = function (db) {
 
     if (twilio) {
       try {
-        const msg = await twilio.messages.create({ body: finalBody, from: TWILIO_FROM, to: toPhone });
+        const params = { body: finalBody, from: TWILIO_FROM, to: toPhone };
+        if (media_url) params.mediaUrl = [media_url];
+        const msg = await twilio.messages.create(params);
         twilioSid = msg.sid;
         status = msg.status;
       } catch (err) {
@@ -201,19 +217,33 @@ module.exports = function (db) {
     res.status(201).json(response);
   });
 
-  // ── POST /api/sms/webhook — Twilio inbound ─────────────────────────
+  // ── POST /api/sms/upload — upload photo for MMS ───────────────────
+  router.post('/upload', authMiddleware, upload.single('media'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No image file provided' });
+    const url = `${APP_URL}/uploads/${req.file.filename}`;
+    res.json({ url, filename: req.file.filename });
+  });
+
+  // ── POST /api/sms/webhook — Twilio inbound (SMS + MMS) ─────────────
   router.post('/webhook', (req, res) => {
-    const { From, Body, MessageSid } = req.body || {};
-    if (!From || !Body) return res.status(400).send('Missing fields');
+    const { From, Body, MessageSid, NumMedia } = req.body || {};
+    if (!From) return res.status(400).send('Missing From');
 
     const driver = db.prepare('SELECT id FROM drivers WHERE phone = ?').get(From);
 
-    db.prepare(`
-      INSERT INTO sms_messages (driver_id, phone_from, phone_to, direction, body, status, twilio_sid)
-      VALUES (?, ?, ?, 'inbound', ?, 'received', ?)
-    `).run(driver?.id || null, From, TWILIO_FROM, Body, MessageSid || null);
+    // Collect incoming media URLs (MMS photos)
+    const mediaUrls = [];
+    for (let i = 0; i < parseInt(NumMedia || 0); i++) {
+      const url = req.body[`MediaUrl${i}`];
+      if (url) mediaUrls.push(url);
+    }
 
-    console.log(`📥 Inbound SMS from ${From}: ${Body}`);
+    db.prepare(`
+      INSERT INTO sms_messages (driver_id, phone_from, phone_to, direction, body, status, twilio_sid, media_urls)
+      VALUES (?, ?, ?, 'inbound', ?, 'received', ?, ?)
+    `).run(driver?.id || null, From, TWILIO_FROM, Body || '', MessageSid || null, mediaUrls.length ? JSON.stringify(mediaUrls) : null);
+
+    console.log(`📥 Inbound ${mediaUrls.length ? 'MMS' : 'SMS'} from ${From}: ${Body} ${mediaUrls.length ? `[${mediaUrls.length} photo(s)]` : ''}`);
     res.set('Content-Type', 'text/xml').send('<Response></Response>');
   });
 

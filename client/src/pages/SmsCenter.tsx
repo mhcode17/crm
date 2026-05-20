@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Send, Search, Phone, MessageSquare, Plus, Link2, ChevronDown, X, Trash2, Zap, UserPlus } from 'lucide-react';
+import { Send, Search, Phone, MessageSquare, Plus, Link2, ChevronDown, X, Trash2, Zap, UserPlus, ImagePlus } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,7 @@ interface Conversation {
 interface Message {
   id: number; driver_id: number; direction: 'outbound' | 'inbound';
   body: string; status: string; recruiter_name?: string; created_at: string;
+  media_urls?: string;
 }
 interface Template { id: number; name: string; body: string; }
 interface SmsStatus { mock: boolean; twilio_number: string | null; apply_link: string; }
@@ -61,6 +62,10 @@ export default function SmsCenter() {
   const [newSmsSending, setNewSmsSending] = useState(false);
   const [allDrivers, setAllDrivers] = useState<{ id: number; name: string; phone: string }[]>([]);
   const [driverSearch, setDriverSearch] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -156,15 +161,17 @@ export default function SmsCenter() {
     if (!selected || !body.trim()) return;
     setSending(true);
     try {
-      const payload = selected.driver_id
+      const payload: any = selected.driver_id
         ? { driver_id: selected.driver_id, body: body.trim() }
         : { phone: selected.phone, name: selected.name, body: body.trim() };
+      if (photoUrl) payload.media_url = photoUrl;
       const { data } = await api.post('/sms/send', payload);
       setMessages(prev => [...prev, data]);
       setBody('');
       if (data.warning) toast.error(`Saved but not delivered: ${data.warning}`, { duration: 5000 });
       else if (data.mock) toast.success('SMS saved (MOCK mode)', { icon: '📱' });
-      else toast.success('SMS sent!', { icon: '📱' });
+      else toast.success(photoUrl ? 'MMS sent!' : 'SMS sent!', { icon: '📱' });
+      removePhoto();
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       loadConversations();
     } catch (e: any) {
@@ -200,6 +207,27 @@ export default function SmsCenter() {
     await api.delete(`/sms/templates/${id}`);
     setTemplates(t => t.filter(x => x.id !== id));
     toast.success('Template deleted');
+  }
+
+  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const fd = new FormData();
+      fd.append('media', file);
+      const { data } = await api.post('/sms/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setPhotoUrl(data.url);
+      setPhotoPreview(URL.createObjectURL(file));
+      toast.success('Photo ready to send');
+    } catch { toast.error('Upload failed'); }
+    finally { setUploadingPhoto(false); if (photoRef.current) photoRef.current.value = ''; }
+  }
+
+  function removePhoto() {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    setPhotoUrl(null);
+    setPhotoPreview(null);
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -353,12 +381,24 @@ export default function SmsCenter() {
                             {m.direction === 'outbound' && m.recruiter_name && (
                               <span className="text-xs text-gray-400 mb-0.5 mr-1">{m.recruiter_name}</span>
                             )}
-                            <div className={`px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap break-words ${
+                            <div className={`rounded-2xl text-sm overflow-hidden ${
                               m.direction === 'outbound'
                                 ? 'bg-blue-600 text-white rounded-br-md'
                                 : 'bg-white text-gray-900 shadow-sm border border-gray-100 rounded-bl-md'
                             }`}>
-                              {m.body}
+                              {/* Images */}
+                              {m.media_urls && (() => {
+                                try {
+                                  const urls: string[] = JSON.parse(m.media_urls);
+                                  return urls.map((url, i) => (
+                                    <a key={i} href={url} target="_blank" rel="noreferrer">
+                                      <img src={url} alt="media" className="max-w-[240px] max-h-[240px] object-cover w-full" />
+                                    </a>
+                                  ));
+                                } catch { return null; }
+                              })()}
+                              {/* Text */}
+                              {m.body && <p className="px-4 py-2.5 whitespace-pre-wrap break-words">{m.body}</p>}
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5">
                               <span className="text-xs text-gray-400">{format(new Date(m.created_at), 'h:mm a')}</span>
@@ -436,6 +476,17 @@ export default function SmsCenter() {
                   Insert Apply Link
                 </button>
 
+                {/* Photo button */}
+                <button
+                  onClick={() => photoRef.current?.click()}
+                  disabled={uploadingPhoto}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <ImagePlus size={12} />
+                  {uploadingPhoto ? 'Uploading...' : 'Photo'}
+                </button>
+                <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoSelect} />
+
                 {/* Char count */}
                 <span className={`ml-auto text-xs ${body.length > 160 ? 'text-orange-500 font-medium' : 'text-gray-400'}`}>
                   {body.length} {body.length > 160 ? `(${Math.ceil(body.length / 160)} SMS)` : '/ 160'}
@@ -448,6 +499,16 @@ export default function SmsCenter() {
                   <button key={v} onClick={() => setBody(b => b + v)} className="hover:text-blue-500 font-mono transition-colors">{v}</button>
                 ))}
               </div>
+
+              {/* Photo preview */}
+              {photoPreview && (
+                <div className="relative inline-block">
+                  <img src={photoPreview} alt="attachment" className="h-20 w-20 object-cover rounded-lg border border-gray-200" />
+                  <button onClick={removePhoto} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center">
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
 
               {/* Input row */}
               <div className="flex gap-3 items-end">

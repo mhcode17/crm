@@ -71,6 +71,7 @@ async function initDb() {
     'ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 100',
     'ALTER TABLE drivers ADD COLUMN lead_id INTEGER',
     'ALTER TABLE sms_messages ADD COLUMN contact_name TEXT',
+    'ALTER TABLE sms_messages ADD COLUMN media_urls TEXT',
     `CREATE TABLE IF NOT EXISTS sms_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       driver_id INTEGER,
