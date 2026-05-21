@@ -24,6 +24,11 @@ export default function DriverDetail() {
   const [tab, setTab] = useState<'info' | 'history' | 'notes' | 'emails' | 'files'>('info');
   const [files, setFiles] = useState<any[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadLabel, setUploadLabel] = useState('');
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadFile2, setUploadFile2] = useState<File | null>(null);
+  const [lightbox, setLightbox] = useState<{ file: any; index: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<Driver>>({});
@@ -103,22 +108,37 @@ export default function DriverDetail() {
   const canEdit = user?.role === 'admin' || driver.recruiter_id === user?.id;
   const isLeadDriver = !!driver.lead_id;
 
-  async function uploadFile(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadFile2(file);
+    setUploadPreview(URL.createObjectURL(file));
+    setUploadLabel('');
+    setShowUploadModal(true);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function doUpload() {
+    if (!uploadFile2) return;
     setUploadingFile(true);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', uploadFile2);
+      if (uploadLabel) fd.append('label', uploadLabel);
       await api.post(`/drivers/${id}/files`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Photo uploaded');
+      setShowUploadModal(false);
+      setUploadPreview(null);
+      setUploadFile2(null);
       load();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Upload failed');
-    } finally {
-      setUploadingFile(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    } finally { setUploadingFile(false); }
+  }
+
+  async function updateLabel(fileId: number, label: string) {
+    await api.patch(`/drivers/${id}/files/${fileId}`, { label });
+    setFiles(prev => prev.map(f => f.id === fileId && f.source === 'manual' ? { ...f, label } : f));
   }
 
   async function deleteFile(fileId: number) {
@@ -361,79 +381,188 @@ export default function DriverDetail() {
           )}
 
           {/* ── FILES TAB ── */}
-          {tab === 'files' && (
-            <div className="space-y-4">
-              {/* Upload button */}
-              {canEdit && (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingFile}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition-colors"
-                  >
-                    <ImagePlus size={15} />
-                    {uploadingFile ? 'Uploading...' : 'Upload Photo'}
-                  </button>
-                  <p className="text-xs text-gray-400">JPG, PNG, WEBP — max 10 MB</p>
-                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={uploadFile} />
-                </div>
-              )}
+          {tab === 'files' && (() => {
+            const FILE_LABELS = [
+              'Front Side of CDL',
+              'Back Side of CDL',
+              'Medical Card (DOT Physical)',
+              'Driver License',
+              'Social Security Card',
+              'Proof of Address',
+              'Profile Photo',
+              'Vehicle Registration',
+              'Insurance Document',
+              'Other',
+            ];
 
-              {files.length === 0 ? (
-                <div className="py-12 text-center text-gray-400">
-                  <FileImage size={36} className="mx-auto mb-3 opacity-30" />
-                  <p className="font-medium text-gray-500">No files yet</p>
-                  <p className="text-sm mt-1">Upload photos or documents for this driver</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {files.map((f: any) => (
-                    <div key={`${f.source}-${f.id}`} className="group relative bg-gray-50 rounded-xl border border-gray-100 overflow-hidden hover:border-blue-200 transition-all">
-                      {/* Thumbnail */}
-                      <a href={`/uploads/${f.filename}`} target="_blank" rel="noreferrer" className="block">
-                        <img
-                          src={`/uploads/${f.filename}`}
-                          alt={f.original_name}
-                          className="w-full h-32 object-cover"
-                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      </a>
+            return (
+              <div className="space-y-4">
+                {canEdit && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
+                    >
+                      <ImagePlus size={15} />
+                      Upload Photo
+                    </button>
+                    <p className="text-xs text-gray-400">JPG, PNG, WEBP — max 10 MB</p>
+                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
+                  </div>
+                )}
 
-                      {/* Info */}
-                      <div className="p-2">
-                        <p className="text-xs font-medium text-gray-700 truncate">{f.original_name || f.filename}</p>
-                        <div className="flex items-center justify-between mt-1">
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${f.source === 'application' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                            {f.source === 'application' ? '📋 Application' : '📤 Manual'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-0.5">{format(new Date(f.created_at), 'MMM d, yyyy')}</p>
-                      </div>
+                {files.length === 0 ? (
+                  <div className="py-12 text-center text-gray-400">
+                    <FileImage size={36} className="mx-auto mb-3 opacity-30" />
+                    <p className="font-medium text-gray-500">No files yet</p>
+                    <p className="text-sm mt-1">Upload photos for this driver</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {files.map((f: any, idx: number) => (
+                      <div key={`${f.source}-${f.id}`} className="group relative bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md hover:border-blue-200 transition-all">
+                        {/* Thumbnail — click to open lightbox */}
+                        <button onClick={() => setLightbox({ file: f, index: idx })} className="block w-full">
+                          <img
+                            src={`/uploads/${f.filename}`}
+                            alt={f.label || f.original_name}
+                            className="w-full h-40 object-cover"
+                          />
+                        </button>
 
-                      {/* Actions overlay */}
-                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <a
-                          href={`/uploads/${f.filename}`}
-                          download={f.original_name}
-                          className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-white"
-                        >
-                          <Download size={13} className="text-gray-600" />
-                        </a>
-                        {f.source === 'manual' && canEdit && (
-                          <button
-                            onClick={() => deleteFile(f.id)}
-                            className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-red-50"
-                          >
-                            <Trash2 size={13} className="text-red-500" />
-                          </button>
+                        {/* Label badge */}
+                        {f.label && (
+                          <div className="absolute top-2 left-2">
+                            <span className="text-xs font-semibold bg-black/60 text-white px-2 py-0.5 rounded-full backdrop-blur-sm">
+                              {f.label}
+                            </span>
+                          </div>
                         )}
+
+                        {/* Source badge */}
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                          <a href={`/uploads/${f.filename}`} download={f.original_name}
+                            className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-white">
+                            <Download size={13} className="text-gray-600" />
+                          </a>
+                          {f.source === 'manual' && canEdit && (
+                            <button onClick={() => deleteFile(f.id)}
+                              className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-red-50">
+                              <Trash2 size={13} className="text-red-500" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Info */}
+                        <div className="p-3">
+                          {f.source === 'manual' && canEdit ? (
+                            <select
+                              value={f.label || ''}
+                              onChange={e => updateLabel(f.id, e.target.value)}
+                              className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+                            >
+                              <option value="">— Select label —</option>
+                              {FILE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+                            </select>
+                          ) : (
+                            <p className="text-xs font-medium text-gray-700 truncate">{f.label || f.original_name}</p>
+                          )}
+                          <div className="flex items-center justify-between mt-1.5">
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${f.source === 'application' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                              {f.source === 'application' ? '📋 Application' : '📤 Manual'}
+                            </span>
+                            <p className="text-xs text-gray-400">{format(new Date(f.created_at), 'MMM d, yyyy')}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ── Upload Modal ── */}
+                {showUploadModal && (
+                  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+                      <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                        <h3 className="font-bold text-gray-900">Upload Photo</h3>
+                        <button onClick={() => { setShowUploadModal(false); setUploadPreview(null); }}><X size={18} className="text-gray-400" /></button>
+                      </div>
+                      <div className="p-5 space-y-4">
+                        {uploadPreview && (
+                          <img src={uploadPreview} alt="preview" className="w-full h-48 object-cover rounded-xl border border-gray-100" />
+                        )}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">Document Type</label>
+                          <select value={uploadLabel} onChange={e => setUploadLabel(e.target.value)}
+                            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">— Select label (optional) —</option>
+                            {FILE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex gap-3">
+                          <button onClick={() => { setShowUploadModal(false); setUploadPreview(null); }}
+                            className="flex-1 border border-gray-200 text-gray-600 text-sm py-2.5 rounded-lg hover:bg-gray-50">
+                            Cancel
+                          </button>
+                          <button onClick={doUpload} disabled={uploadingFile}
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">
+                            {uploadingFile ? 'Uploading...' : 'Upload'}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                  </div>
+                )}
+
+                {/* ── Lightbox ── */}
+                {lightbox && (
+                  <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"
+                    onClick={() => setLightbox(null)}>
+                    <div className="relative max-w-4xl max-h-full w-full" onClick={e => e.stopPropagation()}>
+                      {/* Header */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          {lightbox.file.label && (
+                            <span className="text-white font-semibold text-lg">{lightbox.file.label}</span>
+                          )}
+                          <p className="text-gray-400 text-sm">{lightbox.file.original_name}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <a href={`/uploads/${lightbox.file.filename}`} download={lightbox.file.original_name}
+                            className="flex items-center gap-1.5 text-sm text-white bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors"
+                            onClick={e => e.stopPropagation()}>
+                            <Download size={14} />Download
+                          </a>
+                          <button onClick={() => setLightbox(null)} className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
+                            <X size={18} className="text-white" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Image */}
+                      <img src={`/uploads/${lightbox.file.filename}`} alt={lightbox.file.label || lightbox.file.original_name}
+                        className="max-h-[75vh] w-full object-contain rounded-xl" />
+
+                      {/* Navigation */}
+                      {files.length > 1 && (
+                        <div className="flex items-center justify-center gap-4 mt-4">
+                          <button
+                            onClick={() => setLightbox({ file: files[(lightbox.index - 1 + files.length) % files.length], index: (lightbox.index - 1 + files.length) % files.length })}
+                            className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm transition-colors"
+                          >← Prev</button>
+                          <span className="text-gray-400 text-sm">{lightbox.index + 1} / {files.length}</span>
+                          <button
+                            onClick={() => setLightbox({ file: files[(lightbox.index + 1) % files.length], index: (lightbox.index + 1) % files.length })}
+                            className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg text-sm transition-colors"
+                          >Next →</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {tab === 'history' && (
             <div className="space-y-3">

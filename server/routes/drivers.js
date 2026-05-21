@@ -180,7 +180,7 @@ module.exports = function (db) {
 
     // Manually uploaded files
     const manualFiles = db.prepare(`
-      SELECT df.id, df.filename, df.original_name, df.mime_type, df.created_at,
+      SELECT df.id, df.filename, df.original_name, df.mime_type, df.label, df.created_at,
         u.name as uploaded_by_name
       FROM driver_files df
       LEFT JOIN users u ON df.uploaded_by = u.id
@@ -199,10 +199,11 @@ module.exports = function (db) {
     const driver = db.prepare('SELECT id FROM drivers WHERE id = ?').get(id);
     if (!driver) return res.status(404).json({ error: 'Driver not found' });
 
+    const label = req.body?.label || null;
     const result = db.prepare(`
-      INSERT INTO driver_files (driver_id, filename, original_name, mime_type, uploaded_by)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, req.file.filename, req.file.originalname, req.file.mimetype, req.user.id);
+      INSERT INTO driver_files (driver_id, filename, original_name, mime_type, label, uploaded_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, req.file.filename, req.file.originalname, req.file.mimetype, label, req.user.id);
 
     logActivity(req.user.id, id, 'file_uploaded', `Photo uploaded: ${req.file.originalname}`);
 
@@ -211,9 +212,20 @@ module.exports = function (db) {
       filename: req.file.filename,
       original_name: req.file.originalname,
       mime_type: req.file.mimetype,
+      label: label,
       source: 'manual',
       created_at: new Date().toISOString(),
     });
+  });
+
+  // ── PATCH /api/drivers/:id/files/:fileId — update label ───────────
+  router.patch('/:id/files/:fileId', (req, res) => {
+    const fileId = Number(req.params.fileId);
+    const { label } = req.body;
+    const file = db.prepare('SELECT * FROM driver_files WHERE id = ? AND driver_id = ?').get(fileId, Number(req.params.id));
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    db.prepare('UPDATE driver_files SET label = ? WHERE id = ?').run(label || null, fileId);
+    res.json({ success: true });
   });
 
   // ── DELETE /api/drivers/:id/files/:fileId ──────────────────────────
