@@ -191,6 +191,43 @@ module.exports = function (db) {
     res.json([...appFiles, ...manualFiles]);
   });
 
+  // ── POST /api/drivers/:id/files/from-sms — save SMS photo to driver files ─
+  router.post('/:id/files/from-sms', (req, res) => {
+    const { url, label } = req.body;
+    const id = Number(req.params.id);
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+
+    const driver = db.prepare('SELECT id FROM drivers WHERE id = ?').get(id);
+    if (!driver) return res.status(404).json({ error: 'Driver not found' });
+
+    // Extract filename from local /uploads/ URL
+    let filename;
+    if (url.startsWith('/uploads/')) {
+      filename = url.replace('/uploads/', '');
+    } else {
+      return res.status(400).json({ error: 'Only local /uploads/ URLs are supported' });
+    }
+
+    const filePath = path.join(uploadsDir, filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found on server' });
+
+    // Avoid duplicates
+    const existing = db.prepare('SELECT id FROM driver_files WHERE driver_id = ? AND filename = ?').get(id, filename);
+    if (existing) {
+      // Update label if provided
+      if (label) db.prepare('UPDATE driver_files SET label = ? WHERE id = ?').run(label, existing.id);
+      return res.json({ success: true, id: existing.id, updated: true });
+    }
+
+    const result = db.prepare(`
+      INSERT INTO driver_files (driver_id, filename, original_name, mime_type, label, uploaded_by)
+      VALUES (?, ?, ?, 'image/jpeg', ?, ?)
+    `).run(id, filename, filename, label || null, req.user.id);
+
+    logActivity(req.user.id, id, 'file_uploaded', `Photo saved from SMS${label ? ': ' + label : ''}`);
+    res.status(201).json({ success: true, id: result.lastInsertRowid });
+  });
+
   // ── POST /api/drivers/:id/files ────────────────────────────────────
   router.post('/:id/files', upload.single('file'), (req, res) => {
     const id = Number(req.params.id);

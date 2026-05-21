@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Send, Search, Phone, MessageSquare, Plus, Link2, ChevronDown, X, Trash2, Zap, UserPlus, ImagePlus } from 'lucide-react';
+import { Send, Search, Phone, MessageSquare, Plus, Link2, ChevronDown, X, Trash2, Zap, UserPlus, ImagePlus, Download, FolderPlus, ZoomIn } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -53,6 +53,13 @@ export default function SmsCenter() {
   const [smsStatus, setSmsStatus] = useState<SmsStatus | null>(null);
   const [showNewTpl, setShowNewTpl] = useState(false);
   const [newTpl, setNewTpl] = useState({ name: '', body: '' });
+
+  // Photo lightbox
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [savingToFiles, setSavingToFiles] = useState(false);
+  const [saveLabel, setSaveLabel] = useState('');
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set());
 
   // New SMS modal (send to any number)
   const [showNewSms, setShowNewSms] = useState(false);
@@ -113,6 +120,23 @@ export default function SmsCenter() {
     setShowTemplates(false);
     await loadMessages(conv);
     inputRef.current?.focus();
+  }
+
+  async function savePhotoToFiles() {
+    if (!lightboxUrl || !selected?.driver_id) return;
+    setSavingToFiles(true);
+    try {
+      await api.post(`/drivers/${selected.driver_id}/files/from-sms`, {
+        url: lightboxUrl,
+        label: saveLabel || undefined,
+      });
+      setSavedUrls(prev => new Set([...prev, lightboxUrl]));
+      toast.success(saveLabel ? `Saved as "${saveLabel}"` : 'Saved to driver files');
+      setShowSaveModal(false);
+      setSaveLabel('');
+    } catch (e: any) {
+      toast.error(e.response?.data?.error || 'Error saving');
+    } finally { setSavingToFiles(false); }
   }
 
   function openNewSms() {
@@ -391,14 +415,23 @@ export default function SmsCenter() {
                                 try {
                                   const urls: string[] = JSON.parse(m.media_urls);
                                   return urls.map((url, i) => {
-                                      // Proxy Twilio URLs through our server; serve local uploads directly
-                                    const displayUrl = url.includes('api.twilio.com')
+                                      const displayUrl = url.includes('api.twilio.com')
                                       ? `/api/sms/media?url=${encodeURIComponent(url)}`
                                       : url;
+                                    const isSaved = savedUrls.has(url) || savedUrls.has(displayUrl);
                                     return (
-                                      <a key={i} href={displayUrl} target="_blank" rel="noreferrer">
-                                        <img src={displayUrl} alt="photo" className="max-w-[240px] max-h-[240px] object-cover w-full" />
-                                      </a>
+                                      <div key={i} className="relative group/img cursor-pointer"
+                                        onClick={() => setLightboxUrl(displayUrl)}>
+                                        <img src={displayUrl} alt="photo"
+                                          className="max-w-[240px] max-h-[240px] object-cover w-full" />
+                                        {/* Hover overlay */}
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                          <ZoomIn size={28} className="text-white drop-shadow" />
+                                        </div>
+                                        {isSaved && (
+                                          <div className="absolute top-1 right-1 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full">✓ Saved</div>
+                                        )}
+                                      </div>
                                     );
                                   });
                                 } catch { return null; }
@@ -542,6 +575,80 @@ export default function SmsCenter() {
           </>
         )}
       </div>
+
+      {/* ── Photo Lightbox ──────────────────────────────────────────── */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 bg-black/95 flex flex-col z-50" onClick={() => { setLightboxUrl(null); setShowSaveModal(false); }}>
+          {/* Top bar */}
+          <div className="flex items-center justify-between px-5 py-3 bg-black/60 flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <p className="text-white font-medium">Photo</p>
+            <div className="flex items-center gap-2">
+              {/* Save to Files button — only if talking to a driver */}
+              {selected?.driver_id && (
+                savedUrls.has(lightboxUrl) ? (
+                  <span className="flex items-center gap-1.5 text-sm text-green-400 font-medium px-3 py-1.5">
+                    ✓ Saved to Files
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setShowSaveModal(true)}
+                    className="flex items-center gap-1.5 text-sm font-semibold px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  >
+                    <FolderPlus size={15} />
+                    Save to Driver Files
+                  </button>
+                )
+              )}
+              <a href={lightboxUrl} download className="flex items-center gap-1.5 text-sm text-white bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors">
+                <Download size={14} />
+                Download
+              </a>
+              <button onClick={() => { setLightboxUrl(null); setShowSaveModal(false); }}
+                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition-colors">
+                <X size={18} className="text-white" />
+              </button>
+            </div>
+          </div>
+
+          {/* Image */}
+          <div className="flex-1 flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+            <img src={lightboxUrl} alt="photo" className="max-h-full max-w-full object-contain rounded-lg shadow-2xl" />
+          </div>
+
+          {/* Save to Files label modal */}
+          {showSaveModal && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10" onClick={() => setShowSaveModal(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-5 border-b border-gray-100">
+                  <h3 className="font-bold text-gray-900">Save to Driver Files</h3>
+                  <button onClick={() => setShowSaveModal(false)}><X size={18} className="text-gray-400" /></button>
+                </div>
+                <div className="p-5 space-y-4">
+                  <img src={lightboxUrl} alt="preview" className="w-full h-40 object-cover rounded-xl" />
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Document Label (optional)</label>
+                    <select value={saveLabel} onChange={e => setSaveLabel(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">— No label —</option>
+                      {['Front Side of CDL','Back Side of CDL','Medical Card (DOT Physical)',
+                        'Driver License','Social Security Card','Proof of Address',
+                        'Profile Photo','Vehicle Registration','Insurance Document','Other']
+                        .map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowSaveModal(false)} className="flex-1 border border-gray-200 text-gray-600 text-sm py-2.5 rounded-lg hover:bg-gray-50">Cancel</button>
+                    <button onClick={savePhotoToFiles} disabled={savingToFiles}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">
+                      {savingToFiles ? 'Saving...' : 'Save to Files'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── New SMS Modal ────────────────────────────────────────────── */}
       {showNewSms && (
