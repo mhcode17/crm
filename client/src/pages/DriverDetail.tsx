@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, MapPin, Briefcase, Edit2, Save, X, Trash2, Send, Plus, Clock, Star, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, MapPin, Briefcase, Edit2, Save, X, Trash2, Send, Plus, Clock, Star, CheckCircle, XCircle, RefreshCw, ImagePlus, Download, FileImage } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -21,7 +21,10 @@ export default function DriverDetail() {
   const [history, setHistory] = useState<StatusHistory[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [emails, setEmails] = useState<Email[]>([]);
-  const [tab, setTab] = useState<'info' | 'history' | 'notes' | 'emails'>('info');
+  const [tab, setTab] = useState<'info' | 'history' | 'notes' | 'emails' | 'files'>('info');
+  const [files, setFiles] = useState<any[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Partial<Driver>>({});
   const [newNote, setNewNote] = useState('');
@@ -29,16 +32,18 @@ export default function DriverDetail() {
   const [deleting, setDeleting] = useState(false);
 
   async function load() {
-    const [d, h, n, e] = await Promise.all([
+    const [d, h, n, e, f] = await Promise.all([
       api.get(`/drivers/${id}`),
       api.get(`/drivers/${id}/history`),
       api.get(`/drivers/${id}/notes`),
       api.get(`/drivers/${id}/emails`),
+      api.get(`/drivers/${id}/files`),
     ]);
     setDriver(d.data);
     setHistory(h.data);
     setNotes(n.data);
     setEmails(e.data);
+    setFiles(f.data);
     setForm(d.data);
   }
 
@@ -97,6 +102,31 @@ export default function DriverDetail() {
 
   const canEdit = user?.role === 'admin' || driver.recruiter_id === user?.id;
   const isLeadDriver = !!driver.lead_id;
+
+  async function uploadFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingFile(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      await api.post(`/drivers/${id}/files`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Photo uploaded');
+      load();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploadingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function deleteFile(fileId: number) {
+    if (!confirm('Delete this file?')) return;
+    await api.delete(`/drivers/${id}/files/${fileId}`);
+    toast.success('File deleted');
+    load();
+  }
 
   async function completeLead() {
     if (!driver?.lead_id) return;
@@ -243,6 +273,7 @@ export default function DriverDetail() {
           {[
             { key: 'info',    label: 'Details' },
             { key: 'notes',   label: `Notes (${notes.length})` },
+            { key: 'files',   label: `Files (${files.length})` },
             { key: 'history', label: 'Status History' },
             { key: 'emails',  label: `Emails (${emails.length})` },
           ].map(t => (
@@ -325,6 +356,81 @@ export default function DriverDetail() {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          )}
+
+          {/* ── FILES TAB ── */}
+          {tab === 'files' && (
+            <div className="space-y-4">
+              {/* Upload button */}
+              {canEdit && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingFile}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    <ImagePlus size={15} />
+                    {uploadingFile ? 'Uploading...' : 'Upload Photo'}
+                  </button>
+                  <p className="text-xs text-gray-400">JPG, PNG, WEBP — max 10 MB</p>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={uploadFile} />
+                </div>
+              )}
+
+              {files.length === 0 ? (
+                <div className="py-12 text-center text-gray-400">
+                  <FileImage size={36} className="mx-auto mb-3 opacity-30" />
+                  <p className="font-medium text-gray-500">No files yet</p>
+                  <p className="text-sm mt-1">Upload photos or documents for this driver</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {files.map((f: any) => (
+                    <div key={`${f.source}-${f.id}`} className="group relative bg-gray-50 rounded-xl border border-gray-100 overflow-hidden hover:border-blue-200 transition-all">
+                      {/* Thumbnail */}
+                      <a href={`/uploads/${f.filename}`} target="_blank" rel="noreferrer" className="block">
+                        <img
+                          src={`/uploads/${f.filename}`}
+                          alt={f.original_name}
+                          className="w-full h-32 object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      </a>
+
+                      {/* Info */}
+                      <div className="p-2">
+                        <p className="text-xs font-medium text-gray-700 truncate">{f.original_name || f.filename}</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${f.source === 'application' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                            {f.source === 'application' ? '📋 Application' : '📤 Manual'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">{format(new Date(f.created_at), 'MMM d, yyyy')}</p>
+                      </div>
+
+                      {/* Actions overlay */}
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <a
+                          href={`/uploads/${f.filename}`}
+                          download={f.original_name}
+                          className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-white"
+                        >
+                          <Download size={13} className="text-gray-600" />
+                        </a>
+                        {f.source === 'manual' && canEdit && (
+                          <button
+                            onClick={() => deleteFile(f.id)}
+                            className="w-7 h-7 bg-white/90 rounded-lg flex items-center justify-center shadow-sm hover:bg-red-50"
+                          >
+                            <Trash2 size={13} className="text-red-500" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

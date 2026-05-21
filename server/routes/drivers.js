@@ -1,5 +1,20 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { authMiddleware } = require('../middleware/auth');
+
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (_, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random()*1e6)}${path.extname(file.originalname)}`),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => cb(null, /image\/(jpeg|jpg|png|gif|webp|heic)/i.test(file.mimetype)),
+});
 
 const VALID_STATUSES = ['new', 'contacted', 'interview', 'documents', 'training', 'active', 'inactive', 'rejected'];
 
@@ -148,6 +163,72 @@ module.exports = function (db) {
       SELECT e.*, u.name as recruiter_name FROM emails e
       JOIN users u ON e.recruiter_id = u.id WHERE e.driver_id = ? ORDER BY e.sent_at DESC
     `).all(Number(req.params.id)));
+  });
+
+  // ── GET /api/drivers/:id/files ─────────────────────────────────────
+  // Returns application docs (from lead_documents) + manually uploaded files
+  router.get('/:id/files', (req, res) => {
+    const id = Number(req.params.id);
+    const driver = db.prepare('SELECT lead_id FROM drivers WHERE id = ?').get(id);
+    if (!driver) return res.status(404).json({ error: 'Driver not found' });
+
+    // Files from the apply form (linked via lead_id)
+    const appFiles = driver.lead_id
+      ? db.prepare('SELECT id, filename, original_name, mime_type, uploaded_at as created_at FROM lead_documents WHERE lead_id = ? ORDER BY uploaded_at DESC').all(driver.lead_id)
+        .map(f => ({ ...f, source: 'application' }))
+      : [];
+
+    // Manually uploaded files
+    const manualFiles = db.prepare(`
+      SELECT df.id, df.filename, df.original_name, df.mime_type, df.created_at,
+        u.name as uploaded_by_name
+      FROM driver_files df
+      LEFT JOIN users u ON df.uploaded_by = u.id
+      WHERE df.driver_id = ?
+      ORDER BY df.created_at DESC
+    `).all(id).map(f => ({ ...f, source: 'manual' }));
+
+    res.json([...appFiles, ...manualFiles]);
+  });
+
+  // ── POST /api/drivers/:id/files ────────────────────────────────────
+  router.post('/:id/files', upload.single('file'), (req, res) => {
+    const id = Number(req.params.id);
+    if (!req.file) return res.status(400).json({ error: 'No image file provided' });
+
+    const driver = db.prepare('SELECT id FROM drivers WHERE id = ?').get(id);
+    if (!driver) return res.status(404).json({ error: 'Driver not found' });
+
+    const result = db.prepare(`
+      INSERT INTO driver_files (driver_id, filename, original_name, mime_type, uploaded_by)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, req.file.filename, req.file.originalname, req.file.mimetype, req.user.id);
+
+    logActivity(req.user.id, id, 'file_uploaded', `Photo uploaded: ${req.file.originalname}`);
+
+    res.status(201).json({
+      id: result.lastInsertRowid,
+      filename: req.file.filename,
+      original_name: req.file.originalname,
+      mime_type: req.file.mimetype,
+      source: 'manual',
+      created_at: new Date().toISOString(),
+    });
+  });
+
+  // ── DELETE /api/drivers/:id/files/:fileId ──────────────────────────
+  router.delete('/:id/files/:fileId', (req, res) => {
+    const fileId = Number(req.params.fileId);
+    const file = db.prepare('SELECT * FROM driver_files WHERE id = ? AND driver_id = ?').get(fileId, Number(req.params.id));
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    if (req.user.role !== 'admin' && file.uploaded_by !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+
+    // Delete physical file
+    const filePath = path.join(uploadsDir, file.filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    db.prepare('DELETE FROM driver_files WHERE id = ?').run(fileId);
+    res.json({ success: true });
   });
 
   return router;
