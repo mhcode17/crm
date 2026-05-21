@@ -2,7 +2,38 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
 const { authMiddleware } = require('../middleware/auth');
+
+// Download Twilio media file with Basic Auth and save locally
+function downloadTwilioMedia(mediaUrl, contentType, accountSid, authToken, uploadsDir) {
+  return new Promise((resolve, reject) => {
+    const ext = { 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png',
+      'image/gif': '.gif', 'image/webp': '.webp', 'image/heic': '.heic' }[contentType] || '.jpg';
+    const filename = `mms-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+    const destPath = path.join(uploadsDir, filename);
+    const auth = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+
+    function fetch(url) {
+      const mod = url.startsWith('https') ? https : http;
+      const req = mod.get(url, { headers: { Authorization: auth } }, res => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          return fetch(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode}`));
+        }
+        const file = fs.createWriteStream(destPath);
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve(filename)));
+        file.on('error', reject);
+      });
+      req.on('error', reject);
+    }
+    fetch(mediaUrl);
+  });
+}
 
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -225,26 +256,51 @@ module.exports = function (db) {
   });
 
   // ── POST /api/sms/webhook — Twilio inbound (SMS + MMS) ─────────────
-  router.post('/webhook', (req, res) => {
+  router.post('/webhook', async (req, res) => {
+    // Respond to Twilio immediately — must reply within 15 seconds
+    res.set('Content-Type', 'text/xml').send('<Response></Response>');
+
     const { From, Body, MessageSid, NumMedia } = req.body || {};
-    if (!From) return res.status(400).send('Missing From');
+    if (!From) return;
 
     const driver = db.prepare('SELECT id FROM drivers WHERE phone = ?').get(From);
+    const numMedia = parseInt(NumMedia || 0);
 
-    // Collect incoming media URLs (MMS photos)
-    const mediaUrls = [];
-    for (let i = 0; i < parseInt(NumMedia || 0); i++) {
-      const url = req.body[`MediaUrl${i}`];
-      if (url) mediaUrls.push(url);
+    // Download each media file from Twilio → save locally
+    const localUrls = [];
+    for (let i = 0; i < numMedia; i++) {
+      const twilioUrl = req.body[`MediaUrl${i}`];
+      const contentType = req.body[`MediaContentType${i}`] || 'image/jpeg';
+      if (!twilioUrl) continue;
+
+      if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+        try {
+          const filename = await downloadTwilioMedia(
+            twilioUrl, contentType,
+            process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN,
+            uploadsDir
+          );
+          localUrls.push(`/uploads/${filename}`);
+          console.log(`📥 MMS photo saved: ${filename}`);
+        } catch (e) {
+          console.warn(`⚠️  Failed to download MMS media: ${e.message}`);
+          localUrls.push(twilioUrl); // fallback: store original URL
+        }
+      } else {
+        localUrls.push(twilioUrl);
+      }
     }
 
     db.prepare(`
       INSERT INTO sms_messages (driver_id, phone_from, phone_to, direction, body, status, twilio_sid, media_urls)
       VALUES (?, ?, ?, 'inbound', ?, 'received', ?, ?)
-    `).run(driver?.id || null, From, TWILIO_FROM, Body || '', MessageSid || null, mediaUrls.length ? JSON.stringify(mediaUrls) : null);
+    `).run(
+      driver?.id || null, From, TWILIO_FROM,
+      Body || '', MessageSid || null,
+      localUrls.length ? JSON.stringify(localUrls) : null
+    );
 
-    console.log(`📥 Inbound ${mediaUrls.length ? 'MMS' : 'SMS'} from ${From}: ${Body} ${mediaUrls.length ? `[${mediaUrls.length} photo(s)]` : ''}`);
-    res.set('Content-Type', 'text/xml').send('<Response></Response>');
+    console.log(`📥 Inbound ${localUrls.length ? 'MMS' : 'SMS'} from ${From}: ${Body || ''} ${localUrls.length ? `[${localUrls.length} photo(s)]` : ''}`);
   });
 
   // ── Templates ──────────────────────────────────────────────────────

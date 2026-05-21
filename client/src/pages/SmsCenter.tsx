@@ -390,11 +390,24 @@ export default function SmsCenter() {
                               {m.media_urls && (() => {
                                 try {
                                   const urls: string[] = JSON.parse(m.media_urls);
-                                  return urls.map((url, i) => (
-                                    <a key={i} href={url} target="_blank" rel="noreferrer">
-                                      <img src={url} alt="media" className="max-w-[240px] max-h-[240px] object-cover w-full" />
-                                    </a>
-                                  ));
+                                  return urls.map((url, i) => {
+                                    const isLocal = url.startsWith('/uploads/');
+                                    const isTwilio = url.includes('api.twilio.com');
+                                    if (isTwilio) {
+                                      // Old Twilio URL — show download link instead
+                                      return (
+                                        <a key={i} href={url} target="_blank" rel="noreferrer"
+                                          className="flex items-center gap-2 px-4 py-3 text-sm text-blue-300 underline">
+                                          📎 View photo (external link)
+                                        </a>
+                                      );
+                                    }
+                                    return (
+                                      <a key={i} href={url} target="_blank" rel="noreferrer">
+                                        <img src={url} alt="media" className="max-w-[240px] max-h-[240px] object-cover w-full" />
+                                      </a>
+                                    );
+                                  });
                                 } catch { return null; }
                               })()}
                               {/* Text */}
