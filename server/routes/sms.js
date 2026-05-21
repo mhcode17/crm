@@ -13,16 +13,28 @@ function downloadTwilioMedia(mediaUrl, contentType, accountSid, authToken, uploa
       'image/gif': '.gif', 'image/webp': '.webp', 'image/heic': '.heic' }[contentType] || '.jpg';
     const filename = `mms-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
     const destPath = path.join(uploadsDir, filename);
-    const auth = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+    const basicAuth = 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
-    function fetch(url) {
+    // Step 1: fetch with auth → Twilio returns 302 redirect to CDN
+    // Step 2: follow redirect WITHOUT auth → CDN serves the actual image
+    function fetch(url, withAuth, depth) {
+      if (depth > 10) return reject(new Error('Too many redirects'));
       const mod = url.startsWith('https') ? https : http;
-      const req = mod.get(url, { headers: { Authorization: auth } }, res => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          return fetch(res.headers.location);
+      const headers = { 'Accept': 'image/jpeg, image/png, image/*, */*', 'User-Agent': 'TruckRecruitCRM/1.0' };
+      if (withAuth) headers['Authorization'] = basicAuth;
+
+      const req = mod.get(url, { headers }, res => {
+        if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
+          const location = res.headers.location;
+          if (!location) return reject(new Error('Redirect with no location'));
+          // Don't send Twilio auth to CDN
+          return fetch(location, false, depth + 1);
         }
-        if (res.statusCode !== 200) {
-          return reject(new Error(`HTTP ${res.statusCode}`));
+        const ct = res.headers['content-type'] || '';
+        if (res.statusCode !== 200 || ct.includes('xml') || ct.includes('html') || ct.includes('json')) {
+          // Twilio returned metadata — consume body and reject
+          res.resume();
+          return reject(new Error(`Unexpected content-type: ${ct} (status ${res.statusCode})`));
         }
         const file = fs.createWriteStream(destPath);
         res.pipe(file);
@@ -31,7 +43,7 @@ function downloadTwilioMedia(mediaUrl, contentType, accountSid, authToken, uploa
       });
       req.on('error', reject);
     }
-    fetch(mediaUrl);
+    fetch(mediaUrl, true, 0);
   });
 }
 
@@ -278,17 +290,8 @@ module.exports = function (db) {
       // Serve the file directly
       res.sendFile(localPath);
     } catch (e) {
-      // Fallback: stream directly from Twilio
-      const auth = 'Basic ' + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
-      function proxyFetch(target) {
-        const mod = target.startsWith('https') ? https : http;
-        mod.get(target, { headers: { Authorization: auth } }, remote => {
-          if (remote.statusCode === 301 || remote.statusCode === 302) return proxyFetch(remote.headers.location);
-          res.set('Content-Type', remote.headers['content-type'] || 'image/jpeg');
-          remote.pipe(res);
-        }).on('error', () => res.status(502).send('Fetch failed'));
-      }
-      proxyFetch(url);
+      console.warn('Media download failed:', e.message);
+      res.status(502).send('Could not fetch media from Twilio: ' + e.message);
     }
   });
 
