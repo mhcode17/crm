@@ -174,7 +174,7 @@ module.exports = function (db) {
 
     // Files from the apply form (linked via lead_id)
     const appFiles = driver.lead_id
-      ? db.prepare('SELECT id, filename, original_name, mime_type, uploaded_at as created_at FROM lead_documents WHERE lead_id = ? ORDER BY uploaded_at DESC').all(driver.lead_id)
+      ? db.prepare('SELECT id, filename, original_name, mime_type, label, uploaded_at as created_at FROM lead_documents WHERE lead_id = ? ORDER BY uploaded_at DESC').all(driver.lead_id)
         .map(f => ({ ...f, source: 'application' }))
       : [];
 
@@ -219,12 +219,22 @@ module.exports = function (db) {
   });
 
   // ── PATCH /api/drivers/:id/files/:fileId — update label ───────────
+  // source=manual → driver_files, source=application → lead_documents
   router.patch('/:id/files/:fileId', (req, res) => {
     const fileId = Number(req.params.fileId);
-    const { label } = req.body;
-    const file = db.prepare('SELECT * FROM driver_files WHERE id = ? AND driver_id = ?').get(fileId, Number(req.params.id));
-    if (!file) return res.status(404).json({ error: 'File not found' });
-    db.prepare('UPDATE driver_files SET label = ? WHERE id = ?').run(label || null, fileId);
+    const { label, source } = req.body;
+
+    if (source === 'application') {
+      // Update label in lead_documents
+      const file = db.prepare('SELECT id FROM lead_documents WHERE id = ?').get(fileId);
+      if (!file) return res.status(404).json({ error: 'File not found' });
+      db.prepare('UPDATE lead_documents SET label = ? WHERE id = ?').run(label || null, fileId);
+    } else {
+      // Update label in driver_files
+      const file = db.prepare('SELECT * FROM driver_files WHERE id = ? AND driver_id = ?').get(fileId, Number(req.params.id));
+      if (!file) return res.status(404).json({ error: 'File not found' });
+      db.prepare('UPDATE driver_files SET label = ? WHERE id = ?').run(label || null, fileId);
+    }
     res.json({ success: true });
   });
 

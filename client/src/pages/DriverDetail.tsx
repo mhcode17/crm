@@ -136,9 +136,9 @@ export default function DriverDetail() {
     } finally { setUploadingFile(false); }
   }
 
-  async function updateLabel(fileId: number, label: string) {
-    await api.patch(`/drivers/${id}/files/${fileId}`, { label });
-    setFiles(prev => prev.map(f => f.id === fileId && f.source === 'manual' ? { ...f, label } : f));
+  async function updateLabel(fileId: number, label: string, source: string) {
+    await api.patch(`/drivers/${id}/files/${fileId}`, { label, source });
+    setFiles(prev => prev.map(f => f.id === fileId && f.source === source ? { ...f, label } : f));
   }
 
   async function deleteFile(fileId: number) {
@@ -455,10 +455,10 @@ export default function DriverDetail() {
 
                         {/* Info */}
                         <div className="p-3">
-                          {f.source === 'manual' && canEdit ? (
+                          {canEdit ? (
                             <select
                               value={f.label || ''}
-                              onChange={e => updateLabel(f.id, e.target.value)}
+                              onChange={e => updateLabel(f.id, e.target.value, f.source)}
                               className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
                             >
                               <option value="">— Select label —</option>
