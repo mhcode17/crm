@@ -248,25 +248,48 @@ module.exports = function (db) {
     res.status(201).json(response);
   });
 
-  // ── GET /api/sms/media — proxy Twilio media with auth ─────────────
-  // Allows browser to display Twilio-hosted images without exposing credentials
-  router.get('/media', authMiddleware, (req, res) => {
+  // ── GET /api/sms/media — proxy Twilio media (no auth required for img tags) ──
+  // Downloads from Twilio using server credentials, saves locally, then redirects
+  router.get('/media', async (req, res) => {
     const { url } = req.query;
     if (!url || !url.includes('api.twilio.com')) return res.status(400).send('Invalid URL');
     if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) return res.status(503).send('No credentials');
 
-    const auth = 'Basic ' + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
+    try {
+      // Download from Twilio + save locally
+      const filename = await downloadTwilioMedia(
+        url, 'image/jpeg',
+        process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN,
+        uploadsDir
+      );
+      const localPath = path.join(uploadsDir, filename);
 
-    function fetch(target) {
-      const mod = target.startsWith('https') ? https : http;
-      mod.get(target, { headers: { Authorization: auth } }, remote => {
-        if (remote.statusCode === 301 || remote.statusCode === 302) return fetch(remote.headers.location);
-        res.set('Content-Type', remote.headers['content-type'] || 'image/jpeg');
-        res.set('Cache-Control', 'private, max-age=86400');
-        remote.pipe(res);
-      }).on('error', () => res.status(502).send('Fetch failed'));
+      // Update DB: replace Twilio URL with local URL in all messages
+      const localUrl = `/uploads/${filename}`;
+      const msgs = db.prepare("SELECT id, media_urls FROM sms_messages WHERE media_urls LIKE '%api.twilio.com%'").all();
+      msgs.forEach(m => {
+        try {
+          const urls = JSON.parse(m.media_urls);
+          const updated = urls.map(u => u === url ? localUrl : u);
+          db.prepare('UPDATE sms_messages SET media_urls = ? WHERE id = ?').run(JSON.stringify(updated), m.id);
+        } catch { /* skip */ }
+      });
+
+      // Serve the file directly
+      res.sendFile(localPath);
+    } catch (e) {
+      // Fallback: stream directly from Twilio
+      const auth = 'Basic ' + Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64');
+      function proxyFetch(target) {
+        const mod = target.startsWith('https') ? https : http;
+        mod.get(target, { headers: { Authorization: auth } }, remote => {
+          if (remote.statusCode === 301 || remote.statusCode === 302) return proxyFetch(remote.headers.location);
+          res.set('Content-Type', remote.headers['content-type'] || 'image/jpeg');
+          remote.pipe(res);
+        }).on('error', () => res.status(502).send('Fetch failed'));
+      }
+      proxyFetch(url);
     }
-    fetch(url);
   });
 
   // ── POST /api/sms/upload — upload photo for MMS ───────────────────
