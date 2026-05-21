@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Truck, Users, MessageSquare, Zap, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
+import { Truck, Users, MessageSquare, Zap, BarChart3 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const FEATURES = [
@@ -17,7 +17,6 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showDemo, setShowDemo] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,11 +31,6 @@ export default function Login() {
     }
   }
 
-  function fillDemo(e: string, p: string) {
-    setEmail(e);
-    setPassword(p);
-    setShowDemo(false);
-  }
 
   return (
     <div className="min-h-screen flex">
@@ -169,42 +163,6 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Demo accounts */}
-          <div className="mt-8">
-            <button
-              onClick={() => setShowDemo(p => !p)}
-              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors mx-auto"
-            >
-              {showDemo ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              {showDemo ? 'Hide' : 'Show'} demo accounts
-            </button>
-
-            {showDemo && (
-              <div className="mt-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Demo Accounts</p>
-                {[
-                  { label: 'Admin Manager', email: 'admin@crm.com', pass: 'admin123', role: 'Administrator', color: 'bg-red-50 text-red-600 border-red-100' },
-                  { label: 'Sarah Johnson', email: 'sarah@crm.com', pass: 'pass123', role: 'Recruiter', color: 'bg-blue-50 text-blue-600 border-blue-100' },
-                  { label: 'Mike Davis',    email: 'mike@crm.com',  pass: 'pass123', role: 'Recruiter', color: 'bg-green-50 text-green-600 border-green-100' },
-                  { label: 'Anna Peterson', email: 'anna@crm.com',  pass: 'pass123', role: 'Recruiter', color: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
-                ].map(a => (
-                  <button
-                    key={a.email}
-                    onClick={() => fillDemo(a.email, a.pass)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100 text-left"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-gray-800">{a.label}</p>
-                      <p className="text-xs text-gray-400">{a.email}</p>
-                    </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${a.color}`}>
-                      {a.role}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
 
         </div>
       </div>
