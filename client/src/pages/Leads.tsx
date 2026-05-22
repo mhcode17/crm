@@ -132,7 +132,6 @@ export default function Leads() {
   }
 
   async function deleteLead(leadId: number, name: string) {
-    if (!confirm(`Delete lead "${name}"? This cannot be undone.`)) return;
     try {
       await api.delete(`/leads/${leadId}`);
       toast.success('Lead deleted');
