@@ -37,15 +37,19 @@ module.exports = function (db) {
 
   // Public: POST /api/apply — no auth required
   router.post('/', parseForm, (req, res) => {
-    const { name, email, phone, city, state, truck_type, license_class, experience_years, cdl_number, message } = req.body;
+    const { name, email, phone, city, state, truck_type, license_class, experience_years, cdl_number, message, source } = req.body;
 
     if (!name?.trim() || !phone?.trim()) {
       return res.status(400).json({ error: 'Name and phone are required' });
     }
 
+    // Use provided source if valid, otherwise default to Organic
+    const VALID_SOURCES = ['Facebook', 'Indeed', 'Organic', 'LinkedIn', 'Referral', 'Other'];
+    const leadSource = VALID_SOURCES.includes(source) ? source : 'Organic';
+
     const result = db.prepare(`
       INSERT INTO leads (name, email, phone, city, state, truck_type, license_class, experience_years, notes, source, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Organic', 'available')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available')
     `).run(
       name.trim(),
       email?.trim() || null,
@@ -55,7 +59,8 @@ module.exports = function (db) {
       truck_type || null,
       license_class || null,
       parseInt(experience_years) || 0,
-      [cdl_number ? `CDL#: ${cdl_number}` : '', message].filter(Boolean).join('\n') || null
+      [cdl_number ? `CDL#: ${cdl_number}` : '', message].filter(Boolean).join('\n') || null,
+      leadSource
     );
 
     const leadId = result.lastInsertRowid;
