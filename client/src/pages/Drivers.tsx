@@ -22,6 +22,8 @@ const STATUSES = [
 
 const PIPELINE_ORDER: DriverStatus[] = ['new', 'contacted', 'interview', 'documents', 'training', 'active'];
 
+interface Recruiter { id: number; name: string; avatar_color: string; }
+
 export default function Drivers() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -30,18 +32,28 @@ export default function Drivers() {
   const [search, setSearch] = useState('');
   const [view, setView] = useState<'list' | 'kanban'>('list');
   const [showAdd, setShowAdd] = useState(false);
+  const [recruiters, setRecruiters] = useState<Recruiter[]>([]);
+  const [recruiterFilter, setRecruiterFilter] = useState('all');
 
   const statusFilter = searchParams.get('status') || 'all';
+  const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    if (isAdmin) {
+      api.get('/users').then(r => setRecruiters(r.data.filter((u: any) => u.role === 'recruiter' && u.is_active)));
+    }
+  }, [isAdmin]);
 
   function load() {
     setLoading(true);
     const params: Record<string, string> = {};
     if (statusFilter !== 'all') params.status = statusFilter;
     if (search) params.search = search;
+    if (isAdmin && recruiterFilter !== 'all') params.recruiter_id = recruiterFilter;
     api.get('/drivers', { params }).then(r => { setDrivers(r.data); setLoading(false); });
   }
 
-  useEffect(() => { load(); }, [statusFilter, search]);
+  useEffect(() => { load(); }, [statusFilter, search, recruiterFilter]);
 
   function setStatus(s: string) {
     if (s === 'all') searchParams.delete('status');
@@ -81,6 +93,21 @@ export default function Drivers() {
             className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        {/* Recruiter filter — admin only */}
+        {isAdmin && recruiters.length > 0 && (
+          <div className="flex items-center gap-2">
+            <select
+              value={recruiterFilter}
+              onChange={e => setRecruiterFilter(e.target.value)}
+              className="border border-gray-200 bg-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700"
+            >
+              <option value="all">All Recruiters</option>
+              {recruiters.map(r => (
+                <option key={r.id} value={String(r.id)}>{r.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="flex gap-2">
           <button onClick={() => setView('list')} className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${view === 'list' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>List</button>
           <button onClick={() => setView('kanban')} className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${view === 'kanban' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>Kanban</button>
@@ -115,7 +142,7 @@ export default function Drivers() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Contact</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Recruiter</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Type / Exp.</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Type / Exp. / Endorsement</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -149,6 +176,11 @@ export default function Drivers() {
                     <td className="px-4 py-3">
                       {d.truck_type && <p className="text-xs text-gray-600 flex items-center gap-1"><Briefcase size={11} />{d.truck_type}</p>}
                       {d.experience_years != null && <p className="text-xs text-gray-400">{d.experience_years} yrs exp.</p>}
+                      {(d as any).endorsements && (
+                        <span className="inline-block mt-0.5 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">
+                          {(d as any).endorsements}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Link to={`/drivers/${d.id}`}><ChevronRight size={16} className="text-gray-300" /></Link>
