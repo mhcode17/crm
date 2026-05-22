@@ -27,6 +27,7 @@ export interface Driver {
   license_class?: string;
   experience_years?: number;
   source?: string;
+  endorsements?: string;
   salary_expectation?: string;
   bio?: string;
   lead_id?: number;

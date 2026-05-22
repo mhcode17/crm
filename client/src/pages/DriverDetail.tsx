@@ -314,6 +314,7 @@ export default function DriverDetail() {
                 { label: 'State',            key: 'state',              type: 'text' },
                 { label: 'Truck Type',       key: 'truck_type',         type: 'select', options: TRUCK_TYPES },
                 { label: 'License Class',    key: 'license_class',      type: 'select', options: ['CDL-A', 'CDL-B', 'CDL-C', 'Class A', 'Class B'] },
+                { label: 'Endorsements',     key: 'endorsements',       type: 'select', options: ['H - Hazmat', 'N - Tanker', 'P - Passenger', 'S - School Bus', 'T - Doubles/Triples', 'X - Tanker + Hazmat', 'H, N', 'H, T'] },
                 { label: 'Experience (yrs)', key: 'experience_years',   type: 'number' },
                 { label: 'Source',           key: 'source',             type: 'select', options: SOURCES },
                 { label: 'Pay Expectation',  key: 'salary_expectation', type: 'text' },

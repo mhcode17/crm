@@ -67,13 +67,13 @@ module.exports = function (db) {
   });
 
   router.post('/', (req, res) => {
-    const { name, email, phone, city, state, truck_type, license_class, experience_years, source, salary_expectation, bio, start_date } = req.body;
+    const { name, email, phone, city, state, truck_type, license_class, endorsements, experience_years, source, salary_expectation, bio, start_date } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
 
     const result = db.prepare(`
-      INSERT INTO drivers (name, email, phone, city, state, truck_type, license_class, experience_years, source, salary_expectation, bio, start_date, recruiter_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, email || null, phone || null, city || null, state || null, truck_type || null, license_class || null, Number(experience_years) || 0, source || null, salary_expectation || null, bio || null, start_date || null, req.user.id);
+      INSERT INTO drivers (name, email, phone, city, state, truck_type, license_class, endorsements, experience_years, source, salary_expectation, bio, start_date, recruiter_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(name, email || null, phone || null, city || null, state || null, truck_type || null, license_class || null, endorsements || null, Number(experience_years) || 0, source || null, salary_expectation || null, bio || null, start_date || null, req.user.id);
 
     db.prepare('INSERT INTO status_history (driver_id, old_status, new_status, changed_by) VALUES (?, ?, ?, ?)').run(result.lastInsertRowid, null, 'new', req.user.id);
     logActivity(req.user.id, result.lastInsertRowid, 'driver_created', `Driver ${name} added to the system`);
@@ -87,11 +87,11 @@ module.exports = function (db) {
     if (!driver) return res.status(404).json({ error: 'Driver not found' });
     if (req.user.role !== 'admin' && driver.recruiter_id !== req.user.id) return res.status(403).json({ error: 'Access denied' });
 
-    const { name, email, phone, city, state, truck_type, license_class, experience_years, source, salary_expectation, bio, start_date } = req.body;
+    const { name, email, phone, city, state, truck_type, license_class, endorsements, experience_years, source, salary_expectation, bio, start_date } = req.body;
     db.prepare(`
-      UPDATE drivers SET name=?, email=?, phone=?, city=?, state=?, truck_type=?, license_class=?,
+      UPDATE drivers SET name=?, email=?, phone=?, city=?, state=?, truck_type=?, license_class=?, endorsements=?,
       experience_years=?, source=?, salary_expectation=?, bio=?, start_date=?, updated_at=datetime('now') WHERE id=?
-    `).run(name, email || null, phone || null, city || null, state || null, truck_type || null, license_class || null, Number(experience_years) || 0, source || null, salary_expectation || null, bio || null, start_date || null, id);
+    `).run(name, email || null, phone || null, city || null, state || null, truck_type || null, license_class || null, endorsements || null, Number(experience_years) || 0, source || null, salary_expectation || null, bio || null, start_date || null, id);
 
     logActivity(req.user.id, id, 'driver_updated', `Driver ${name} profile updated`);
     res.json(db.prepare('SELECT * FROM drivers WHERE id = ?').get(id));

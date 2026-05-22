@@ -9,7 +9,7 @@ const SOURCES = ['Indeed', 'LinkedIn', 'Referral', 'Facebook', 'Cold Call', 'Web
 export default function AddDriverModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
   const [form, setForm] = useState({
     name: '', email: '', phone: '', city: '', state: '',
-    truck_type: '', license_class: '', experience_years: '',
+    truck_type: '', license_class: '', endorsements: '', experience_years: '',
     source: '', salary_expectation: '', bio: '', start_date: ''
   });
   const [saving, setSaving] = useState(false);
@@ -74,6 +74,20 @@ export default function AddDriverModal({ onClose, onAdded }: { onClose: () => vo
               <select value={form.license_class} onChange={e => set('license_class', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">Select...</option>
                 {['CDL-A', 'CDL-B', 'CDL-C', 'Class A', 'Class B', 'Class C'].map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Endorsements</label>
+              <select value={form.endorsements} onChange={e => set('endorsements', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">None</option>
+                <option value="H - Hazmat">H — Hazardous Materials</option>
+                <option value="N - Tanker">N — Tanker</option>
+                <option value="P - Passenger">P — Passenger</option>
+                <option value="S - School Bus">S — School Bus</option>
+                <option value="T - Doubles/Triples">T — Doubles/Triples</option>
+                <option value="X - Tanker + Hazmat">X — Tanker + Hazmat</option>
+                <option value="H, N">H + N (Hazmat + Tanker)</option>
+                <option value="H, T">H + T (Hazmat + Doubles)</option>
               </select>
             </div>
             <div>
