@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { MapPin, Briefcase, Star, ArrowRight, AlertCircle, Plus, Search, X, FileText, Copy, Check } from 'lucide-react';
+import { MapPin, Briefcase, Star, ArrowRight, AlertCircle, Plus, Search, X, FileText, Copy, Check, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -131,6 +131,15 @@ export default function Leads() {
     } catch (e: any) { toast.error(e.response?.data?.error || 'Error'); }
   }
 
+  async function deleteLead(leadId: number, name: string) {
+    if (!confirm(`Delete lead "${name}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/leads/${leadId}`);
+      toast.success('Lead deleted');
+      load();
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Error'); }
+  }
+
   async function addLead(e: React.FormEvent) {
     e.preventDefault();
     if (!addForm.name.trim()) { toast.error('Name is required'); return; }
@@ -209,11 +218,11 @@ export default function Leads() {
           {!!lead.experience_years && <span className="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded-full">{lead.experience_years}y exp</span>}
         </div>
 
-        <div className="mt-auto">
+        <div className="mt-auto flex gap-2">
           <button
             onClick={() => claim(lead.id)}
             disabled={!canClaim || isClaiming}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
               isClaiming ? 'bg-blue-400 text-white cursor-wait'
               : canClaim ? 'bg-blue-600 text-white hover:bg-blue-700'
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -222,6 +231,15 @@ export default function Leads() {
             <ArrowRight size={14} />
             {isClaiming ? 'Claiming...' : canClaim ? 'Claim Lead' : `Limit reached (${stats.max})`}
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => deleteLead(lead.id, lead.name)}
+              className="w-10 flex items-center justify-center bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 rounded-lg transition-colors"
+              title="Delete lead"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
         </div>
       </div>
     );
@@ -230,21 +248,32 @@ export default function Leads() {
   // ── Admin card ──────────────────────────────────────────────────
   function AdminLeadCard({ lead }: { lead: Lead }) {
     const STATUS_CLS: Record<string, string> = {
-      available: 'bg-blue-50 text-blue-600', claimed: 'bg-green-50 text-green-700',
-      completed: 'bg-emerald-50 text-emerald-700', rejected: 'bg-red-50 text-red-500',
+      available:  'bg-blue-50 text-blue-600',
+      claimed:    'bg-green-50 text-green-700',
+      completed:  'bg-emerald-50 text-emerald-700',
+      rejected:   'bg-red-50 text-red-500',
     };
     const hasDocs = (lead.doc_count ?? 0) > 0;
     return (
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 group hover:border-gray-200 transition-all">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate">{lead.name}</p>
             {hasDocs && <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5 flex-shrink-0"><FileText size={9} />{lead.doc_count}</span>}
           </div>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${STATUS_CLS[lead.status] || 'bg-gray-50 text-gray-500'}`}>{lead.status}</span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_CLS[lead.status] || 'bg-gray-50 text-gray-500'}`}>{lead.status}</span>
+            <button
+              onClick={() => deleteLead(lead.id, lead.name)}
+              className="opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+              title="Delete lead"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
         </div>
         <div className="text-xs text-gray-400 space-y-0.5 mb-3">
-          {lead.city && <p className="flex items-center gap-1"><MapPin size={9} />{lead.city}, {lead.state}</p>}
+          {lead.city && <p className="flex items-center gap-1"><MapPin size={9} />{lead.city}{lead.state ? `, ${lead.state}` : ''}</p>}
           {lead.truck_type && <p className="flex items-center gap-1"><Briefcase size={9} />{lead.truck_type} · {lead.license_class} · {lead.experience_years}y</p>}
           {lead.notes && <p className="truncate text-gray-300 italic">{lead.notes}</p>}
         </div>
