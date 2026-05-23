@@ -1,36 +1,49 @@
 const express = require('express');
-const nodemailer = require('nodemailer');
+const https = require('https');
 const { authMiddleware } = require('../middleware/auth');
 
 function applyVars(text, vars) {
   return Object.entries(vars).reduce((t, [k, v]) => t.split(`{${k}}`).join(v || ''), text);
 }
 
-// Build a verified FROM address using the sending domain
-// e.g. marcus@oneprimefleet.com → marcus@contact.oneprimefleet.com
 function buildFromAddress(recruiterEmail) {
-  const sendingDomain = process.env.EMAIL_SENDING_DOMAIN || 'contact.oneprimefleet.com';
-  if (!recruiterEmail) return `noreply@${sendingDomain}`;
+  const domain = process.env.EMAIL_SENDING_DOMAIN || 'contact.oneprimefleet.com';
+  if (!recruiterEmail) return `noreply@${domain}`;
   const username = recruiterEmail.split('@')[0];
-  return `${username}@${sendingDomain}`;
+  return `${username}@${domain}`;
+}
+
+function sendViaResend({ from, replyTo, to, subject, text }) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ from, reply_to: replyTo, to: [to], subject, text });
+    const req = https.request({
+      hostname: 'api.resend.com',
+      path: '/emails',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, res => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve(JSON.parse(data));
+        else reject(new Error(`Resend API error ${res.statusCode}: ${data}`));
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
 }
 
 module.exports = function (db) {
   const router = express.Router();
   router.use(authMiddleware);
 
-  function getTransporter() {
-    if (process.env.EMAIL_MOCK !== 'false') return null;
-    return nodemailer.createTransport({
-      host: 'smtp.resend.com',
-      port: 465,
-      secure: true,
-      auth: {
-        user: 'resend',
-        pass: process.env.RESEND_API_KEY
-      }
-    });
-  }
+  const isLive = () => process.env.EMAIL_MOCK !== 'false' ? false : !!process.env.RESEND_API_KEY;
 
   router.get('/templates', (_, res) => {
     res.json(db.prepare('SELECT * FROM email_templates ORDER BY category, name').all());
@@ -151,14 +164,13 @@ module.exports = function (db) {
     const finalSubject = applyVars(subject, vars);
     const finalBody = applyVars(body, vars);
 
-    const transporter = getTransporter();
-    if (transporter && driver.email) {
-      const fromAddress = buildFromAddress(recruiter.email);
+    const fromAddress = buildFromAddress(recruiter.email);
+    if (isLive() && driver.email) {
       try {
-        await transporter.sendMail({
-          from: `"${recruiter.name} — One Prime Fleet" <${fromAddress}>`,
+        await sendViaResend({
+          from: `${recruiter.name} — One Prime Fleet <${fromAddress}>`,
           replyTo: recruiter.email || fromAddress,
-          to: `"${driver.name}" <${driver.email}>`,
+          to: driver.email,
           subject: finalSubject,
           text: finalBody
         });
@@ -167,7 +179,7 @@ module.exports = function (db) {
       }
     } else {
       console.log('\n--- MOCK EMAIL ---');
-      console.log(`From: ${recruiter.name} <${buildFromAddress(recruiter.email)}>`);
+      console.log(`From: ${recruiter.name} <${fromAddress}>`);
       console.log(`ReplyTo: ${recruiter.email}`);
       console.log(`To: ${driver.name} <${driver.email || 'no-email'}>`);
       console.log(`Subject: ${finalSubject}`);
@@ -180,7 +192,7 @@ module.exports = function (db) {
 
     const email = db.prepare(`SELECT e.*, u.name as recruiter_name, u.email as recruiter_from_email, u.avatar_color as recruiter_color
                                FROM emails e JOIN users u ON e.recruiter_id = u.id WHERE e.id = ?`).get(result.lastInsertRowid);
-    res.status(201).json({ ...email, mock: !transporter });
+    res.status(201).json({ ...email, mock: !isLive() });
   });
 
   return router;
