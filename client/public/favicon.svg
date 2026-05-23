@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Background circle -->
+  <rect width="32" height="32" rx="8" fill="#2563EB"/>
+  <!-- Truck body (cab) -->
+  <rect x="5" y="13" width="10" height="9" rx="1.5" fill="white"/>
+  <!-- Trailer -->
+  <rect x="14" y="11" width="13" height="11" rx="1.5" fill="white" opacity="0.9"/>
+  <!-- Cab window -->
+  <rect x="6.5" y="14.5" width="5" height="4" rx="1" fill="#2563EB"/>
+  <!-- Wheels -->
+  <circle cx="9" cy="23.5" r="2.5" fill="white"/>
+  <circle cx="9" cy="23.5" r="1.2" fill="#2563EB"/>
+  <circle cx="20" cy="23.5" r="2.5" fill="white"/>
+  <circle cx="20" cy="23.5" r="1.2" fill="#2563EB"/>
+  <!-- Exhaust pipe -->
+  <rect x="4.5" y="10" width="2" height="4" rx="1" fill="white" opacity="0.7"/>
+</svg>

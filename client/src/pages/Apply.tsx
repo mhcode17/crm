@@ -143,9 +143,9 @@ export default function Apply() {
               <p className="text-slate-500 text-xs">Driver Careers</p>
             </div>
           </div>
-          <a href="tel:18001234567" className="hidden sm:flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
+          <a href="tel:+15742120100" className="hidden sm:flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
             <Phone size={14} />
-            Questions? Call us
+            +1 (574) 212-0100
           </a>
         </div>
       </header>
