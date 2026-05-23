@@ -2,7 +2,11 @@ const express = require('express');
 const https = require('https');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { authMiddleware } = require('../middleware/auth');
+
+const emailFilesDir = path.join(__dirname, '../uploads/email_files');
+if (!fs.existsSync(emailFilesDir)) fs.mkdirSync(emailFilesDir, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -167,11 +171,16 @@ module.exports = function (db) {
     const finalBody    = applyVars(body, vars);
     const fromAddress  = buildFromAddress(recruiter.email);
 
-    // Build attachments list
-    const attachments = (req.files || []).map(f => ({
-      filename: f.originalname,
-      content:  f.buffer.toString('base64')
-    }));
+    // Save files to disk + build Resend attachments list
+    const savedFiles = [];
+    const attachments = (req.files || []).map(f => {
+      const ext = path.extname(f.originalname);
+      const savedName = `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+      const savedPath = path.join(emailFilesDir, savedName);
+      fs.writeFileSync(savedPath, f.buffer);
+      savedFiles.push({ filename: f.originalname, path: `/uploads/email_files/${savedName}`, mime: f.mimetype });
+      return { filename: f.originalname, content: f.buffer.toString('base64') };
+    });
 
     if (isLive() && driver.email) {
       try {
@@ -196,10 +205,10 @@ module.exports = function (db) {
       console.log(`Body:\n${finalBody}\n--- END ---\n`);
     }
 
-    const attachmentNames = attachments.map(a => a.filename).join(', ') || null;
+    const attachmentsJson = savedFiles.length > 0 ? JSON.stringify(savedFiles) : null;
     const result = db.prepare(
       'INSERT INTO emails (driver_id, recruiter_id, subject, body, template_used, attachments) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(Number(driver_id), req.user.id, finalSubject, finalBody, template_used || null, attachmentNames);
+    ).run(Number(driver_id), req.user.id, finalSubject, finalBody, template_used || null, attachmentsJson);
 
     db.prepare('INSERT INTO activities (recruiter_id, driver_id, action, details) VALUES (?, ?, ?, ?)').run(req.user.id, Number(driver_id), 'email_sent', `Email sent: ${finalSubject}`);
 

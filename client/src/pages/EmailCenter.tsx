@@ -20,6 +20,12 @@ interface Conversation {
 }
 
 interface AttachFile { file: File; preview?: string; }
+interface SavedAttachment { filename: string; path: string; mime: string; }
+
+function parseAttachments(raw?: string): SavedAttachment[] {
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch { return []; }
+}
 
 interface EmailMsg {
   id: number;
@@ -396,13 +402,35 @@ export default function EmailCenter() {
                               <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
                             </div>
                             {(m.template_used || m.attachments) && (
-                              <div className="px-4 pb-2 flex gap-2 flex-wrap">
-                                {m.template_used && <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">Template: {m.template_used}</span>}
-                                {m.attachments && m.attachments.split(', ').map((name, i) => (
-                                  <span key={i} className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                    <Paperclip size={10} />{name}
-                                  </span>
-                                ))}
+                              <div className="px-4 pb-3">
+                                {m.template_used && <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full inline-block mb-2">Template: {m.template_used}</span>}
+                                {m.attachments && (() => {
+                                  const files = parseAttachments(m.attachments);
+                                  const images = files.filter(f => f.mime?.startsWith('image/'));
+                                  const docs   = files.filter(f => !f.mime?.startsWith('image/'));
+                                  return (
+                                    <div className="space-y-2">
+                                      {images.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                          {images.map((f, i) => (
+                                            <a key={i} href={f.path} target="_blank" rel="noreferrer">
+                                              <img src={f.path} alt={f.filename} className="h-28 w-auto rounded-lg border border-gray-200 object-cover hover:opacity-90 transition-opacity cursor-zoom-in" />
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {docs.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                          {docs.map((f, i) => (
+                                            <a key={i} href={f.path} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">
+                                              <Paperclip size={11} />{f.filename}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )}
                           </div>
