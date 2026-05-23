@@ -6,17 +6,29 @@ function applyVars(text, vars) {
   return Object.entries(vars).reduce((t, [k, v]) => t.split(`{${k}}`).join(v || ''), text);
 }
 
+// Build a verified FROM address using the sending domain
+// e.g. marcus@oneprimefleet.com → marcus@contact.oneprimefleet.com
+function buildFromAddress(recruiterEmail) {
+  const sendingDomain = process.env.EMAIL_SENDING_DOMAIN || 'contact.oneprimefleet.com';
+  if (!recruiterEmail) return `noreply@${sendingDomain}`;
+  const username = recruiterEmail.split('@')[0];
+  return `${username}@${sendingDomain}`;
+}
+
 module.exports = function (db) {
   const router = express.Router();
   router.use(authMiddleware);
 
-  function getTransporter(recruiterEmail) {
+  function getTransporter() {
     if (process.env.EMAIL_MOCK !== 'false') return null;
-    return nodemailer.createTransporter({
-      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: false,
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+    return nodemailer.createTransport({
+      host: 'smtp.resend.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: 'resend',
+        pass: process.env.RESEND_API_KEY
+      }
     });
   }
 
@@ -139,11 +151,13 @@ module.exports = function (db) {
     const finalSubject = applyVars(subject, vars);
     const finalBody = applyVars(body, vars);
 
-    const transporter = getTransporter(recruiter.email);
+    const transporter = getTransporter();
     if (transporter && driver.email) {
+      const fromAddress = buildFromAddress(recruiter.email);
       try {
         await transporter.sendMail({
-          from: `"${recruiter.name}" <${recruiter.email || process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+          from: `"${recruiter.name} — One Prime Fleet" <${fromAddress}>`,
+          replyTo: recruiter.email || fromAddress,
           to: `"${driver.name}" <${driver.email}>`,
           subject: finalSubject,
           text: finalBody
@@ -153,7 +167,8 @@ module.exports = function (db) {
       }
     } else {
       console.log('\n--- MOCK EMAIL ---');
-      console.log(`From: ${recruiter.name} <${recruiter.email}>`);
+      console.log(`From: ${recruiter.name} <${buildFromAddress(recruiter.email)}>`);
+      console.log(`ReplyTo: ${recruiter.email}`);
       console.log(`To: ${driver.name} <${driver.email || 'no-email'}>`);
       console.log(`Subject: ${finalSubject}`);
       console.log(`Body:\n${finalBody}`);
