@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Send, Search, Mail, Plus, Trash2, ChevronDown, X, FileText, Users } from 'lucide-react';
+import { Send, Search, Mail, Plus, Trash2, ChevronDown, X, FileText, Paperclip, Image } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +19,8 @@ interface Conversation {
   email_count: number;
 }
 
+interface AttachFile { file: File; preview?: string; }
+
 interface EmailMsg {
   id: number;
   driver_id: number;
@@ -32,6 +34,7 @@ interface EmailMsg {
   body: string;
   template_used?: string;
   direction?: 'outbound' | 'inbound';
+  attachments?: string;
   sent_at: string;
 }
 
@@ -69,7 +72,9 @@ export default function EmailCenter() {
   const [search, setSearch] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [attachFiles, setAttachFiles] = useState<AttachFile[]>([]);
   const [sending, setSending] = useState(false);
+  const attachRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -110,17 +115,39 @@ export default function EmailCenter() {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }
 
+  function addAttachFiles(files: FileList | null) {
+    if (!files) return;
+    const items: AttachFile[] = Array.from(files).map(file => ({
+      file,
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+    }));
+    setAttachFiles(prev => [...prev, ...items].slice(0, 10));
+  }
+
+  function removeAttach(i: number) {
+    setAttachFiles(prev => {
+      if (prev[i].preview) URL.revokeObjectURL(prev[i].preview!);
+      return prev.filter((_, j) => j !== i);
+    });
+  }
+
   async function handleSend() {
     if (!selected) return;
     if (!subject.trim()) { toast.error('Enter email subject'); return; }
     if (!body.trim()) { toast.error('Enter email body'); return; }
     setSending(true);
     try {
-      const r = await api.post('/emails/send', { driver_id: selected.driver_id, subject, body });
+      const fd = new FormData();
+      fd.append('driver_id', String(selected.driver_id));
+      fd.append('subject', subject);
+      fd.append('body', body);
+      attachFiles.forEach(a => fd.append('attachments', a.file));
+      const r = await api.post('/emails/send', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       if (r.data.mock) toast.success('Email saved (mock mode)');
       else toast.success('Email sent!');
       setSubject('');
       setBody('');
+      setAttachFiles([]);
       setMessages(m => [...m, r.data]);
       loadConversations();
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -368,9 +395,14 @@ export default function EmailCenter() {
                               <p className="text-xs font-semibold text-gray-500 mb-1.5">{m.subject}</p>
                               <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
                             </div>
-                            {m.template_used && (
-                              <div className="px-4 pb-2">
-                                <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">Template: {m.template_used}</span>
+                            {(m.template_used || m.attachments) && (
+                              <div className="px-4 pb-2 flex gap-2 flex-wrap">
+                                {m.template_used && <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">Template: {m.template_used}</span>}
+                                {m.attachments && m.attachments.split(', ').map((name, i) => (
+                                  <span key={i} className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Paperclip size={10} />{name}
+                                  </span>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -409,7 +441,42 @@ export default function EmailCenter() {
                 rows={4}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
-              <div className="flex justify-end mt-2">
+
+              {/* Attached files preview */}
+              {attachFiles.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {attachFiles.map((a, i) => (
+                    <div key={i} className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
+                      {a.preview
+                        ? <img src={a.preview} className="w-6 h-6 rounded object-cover" />
+                        : <FileText size={14} className="text-blue-500" />}
+                      <span className="text-xs text-gray-600 max-w-[120px] truncate">{a.file.name}</span>
+                      <button onClick={() => removeAttach(i)} className="text-gray-400 hover:text-red-500"><X size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mt-2">
+                <div className="flex items-center gap-1">
+                  <input ref={attachRef} type="file" multiple accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx" className="hidden" onChange={e => addAttachFiles(e.target.files)} />
+                  <button
+                    onClick={() => attachRef.current?.click()}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                    title="Attach files"
+                  >
+                    <Paperclip size={14} />
+                    Attach
+                  </button>
+                  <button
+                    onClick={() => { if (attachRef.current) { attachRef.current.accept = 'image/*'; attachRef.current.click(); setTimeout(() => { if (attachRef.current) attachRef.current.accept = '.jpg,.jpeg,.png,.gif,.pdf,.doc,.docx'; }, 100); }}}
+                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 px-2 py-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                    title="Attach image"
+                  >
+                    <Image size={14} />
+                    Photo
+                  </button>
+                </div>
                 <button
                   onClick={handleSend}
                   disabled={sending || !selected.driver_email}
