@@ -31,6 +31,7 @@ interface EmailMsg {
   subject: string;
   body: string;
   template_used?: string;
+  direction?: 'outbound' | 'inbound';
   sent_at: string;
 }
 
@@ -322,34 +323,61 @@ export default function EmailCenter() {
                   <div className="text-center mb-3">
                     <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{group.label}</span>
                   </div>
-                  {group.msgs.map(m => (
-                    <div key={m.id} className="mb-3">
-                      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Avatar name={m.recruiter_name} color={m.recruiter_color} size="sm" />
-                            <div>
-                              <p className="text-xs font-semibold text-gray-700">{m.recruiter_name}</p>
-                              <p className="text-xs text-gray-400">{m.recruiter_from_email}</p>
+                  {group.msgs.map(m => {
+                    const isInbound = m.direction === 'inbound';
+                    return (
+                      <div key={m.id} className="mb-3">
+                        {isInbound ? (
+                          /* Inbound — from driver */
+                          <div className="bg-green-50 border border-green-100 rounded-xl overflow-hidden shadow-sm">
+                            <div className="px-4 py-2.5 bg-green-100/60 border-b border-green-100 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                                  {selected.driver_name.split(' ').map(p => p[0]).join('').slice(0, 2)}
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-700">{selected.driver_name}</p>
+                                  <p className="text-xs text-gray-400">{selected.driver_email}</p>
+                                </div>
+                                <span className="text-xs bg-green-200 text-green-700 px-2 py-0.5 rounded-full font-medium ml-1">Reply</span>
+                              </div>
+                              <p className="text-xs text-gray-400">{format(new Date(m.sent_at), 'MMM d, h:mm a')}</p>
+                            </div>
+                            <div className="px-4 py-2.5">
+                              <p className="text-xs font-semibold text-gray-500 mb-1.5">{m.subject}</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-xs text-gray-400">{format(new Date(m.sent_at), 'MMM d, h:mm a')}</p>
-                            <p className="text-xs text-gray-300">to {selected.driver_email || selected.driver_name}</p>
-                          </div>
-                        </div>
-                        <div className="px-4 py-2.5">
-                          <p className="text-xs font-semibold text-gray-500 mb-1.5">{m.subject}</p>
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
-                        </div>
-                        {m.template_used && (
-                          <div className="px-4 pb-2">
-                            <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">Template: {m.template_used}</span>
+                        ) : (
+                          /* Outbound — from recruiter */
+                          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Avatar name={m.recruiter_name} color={m.recruiter_color} size="sm" />
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-700">{m.recruiter_name}</p>
+                                  <p className="text-xs text-gray-400">{m.recruiter_from_email}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs text-gray-400">{format(new Date(m.sent_at), 'MMM d, h:mm a')}</p>
+                                <p className="text-xs text-gray-300">to {selected.driver_email || selected.driver_name}</p>
+                              </div>
+                            </div>
+                            <div className="px-4 py-2.5">
+                              <p className="text-xs font-semibold text-gray-500 mb-1.5">{m.subject}</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
+                            </div>
+                            {m.template_used && (
+                              <div className="px-4 pb-2">
+                                <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">Template: {m.template_used}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ))}
               {messages.length === 0 && (

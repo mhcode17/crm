@@ -169,7 +169,7 @@ module.exports = function (db) {
       try {
         await sendViaResend({
           from: `${recruiter.name} — One Prime Fleet <${fromAddress}>`,
-          replyTo: recruiter.email || fromAddress,
+          replyTo: fromAddress,
           to: driver.email,
           subject: finalSubject,
           text: finalBody

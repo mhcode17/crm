@@ -117,6 +117,7 @@ async function initDb() {
       uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (lead_id) REFERENCES leads(id)
     )`,
+    `ALTER TABLE emails ADD COLUMN direction TEXT DEFAULT 'outbound'`,
   ];
   migrations.forEach(m => { try { sqlDb.run(m); } catch (e) { /* already applied */ } });
   // Ensure existing users have points

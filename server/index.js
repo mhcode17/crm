@@ -47,8 +47,17 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`\n🚀 TruckRecruit CRM running on http://localhost:${PORT}`);
     console.log(`🌍 Mode: ${isProd ? 'PRODUCTION' : 'DEVELOPMENT'}`);
-    console.log(`📧 Email: ${process.env.EMAIL_MOCK !== 'false' ? 'MOCK (console)' : 'SMTP'}\n`);
+    console.log(`📧 Email: ${process.env.EMAIL_MOCK !== 'false' ? 'MOCK (console)' : 'Resend API'}\n`);
   });
+
+  // Start inbound SMTP server (only in production or if explicitly enabled)
+  if (isProd || process.env.SMTP_INBOUND === 'true') {
+    try {
+      require('./smtp-inbound')(db);
+    } catch (e) {
+      console.error('SMTP inbound failed to start (smtp-server/mailparser not installed?):', e.message);
+    }
+  }
 }
 
 startServer().catch(err => { console.error('Startup error:', err); process.exit(1); });
