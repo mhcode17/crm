@@ -50,10 +50,14 @@ module.exports = function startSmtpInbound(db) {
             return callback();
           }
 
-          // Save image/file attachments (skip tiny signature images < 2 KB)
+          // Save only real file attachments — skip inline CID images (email signatures, logos)
           const savedFiles = [];
           for (const att of (mail.attachments || [])) {
-            if (!att.content || att.content.length < 2048) continue;
+            if (!att.content || att.content.length === 0) continue;
+            // Skip inline images referenced by CID (signature logos, embedded images)
+            if (att.contentId) continue;
+            // Skip anything that's not explicitly an attachment and is small (< 10 KB)
+            if (att.contentDisposition !== 'attachment' && att.content.length < 10240) continue;
             const mime = att.contentType || 'application/octet-stream';
             const isImage = mime.startsWith('image/');
             const isDoc = /\/(pdf|msword|vnd\.(openxml|ms-excel))/.test(mime);
