@@ -382,6 +382,33 @@ export default function EmailCenter() {
                               <p className="text-xs font-semibold text-gray-500 mb-1.5">{m.subject}</p>
                               <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
                             </div>
+                            {m.attachments && (() => {
+                              const files = parseAttachments(m.attachments);
+                              const images = files.filter(f => f.mime?.startsWith('image/'));
+                              const docs   = files.filter(f => !f.mime?.startsWith('image/'));
+                              return (
+                                <div className="px-4 pb-3 space-y-2">
+                                  {images.length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                      {images.map((f, i) => (
+                                        <a key={i} href={f.path} target="_blank" rel="noreferrer">
+                                          <img src={f.path} alt={f.filename} className="h-28 w-auto rounded-lg border border-green-200 object-cover hover:opacity-90 transition-opacity cursor-zoom-in" />
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {docs.length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                      {docs.map((f, i) => (
+                                        <a key={i} href={f.path} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-green-700 bg-green-100 border border-green-200 px-2.5 py-1.5 rounded-lg hover:bg-green-200 transition-colors">
+                                          <Paperclip size={11} />{f.filename}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           /* Outbound — from recruiter */

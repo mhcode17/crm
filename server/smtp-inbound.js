@@ -1,8 +1,12 @@
 const { SMTPServer } = require('smtp-server');
 const { simpleParser } = require('mailparser');
+const path = require('path');
+const fs = require('fs');
 
 module.exports = function startSmtpInbound(db) {
   const DOMAIN = process.env.EMAIL_SENDING_DOMAIN || 'contact.oneprimefleet.com';
+  const emailFilesDir = path.join(__dirname, 'uploads/email_files');
+  if (!fs.existsSync(emailFilesDir)) fs.mkdirSync(emailFilesDir, { recursive: true });
 
   const server = new SMTPServer({
     authOptional: true,
@@ -24,11 +28,10 @@ module.exports = function startSmtpInbound(db) {
           const toAddr   = (session.envelope.rcptTo[0]?.address || '').toLowerCase();
           const fromAddr = (mail.from?.value[0]?.address || '').toLowerCase();
           const subject  = mail.subject || '(no subject)';
-          const body     = mail.text   || mail.html?.replace(/<[^>]+>/g, '') || '';
+          const body     = mail.text || mail.html?.replace(/<[^>]+>/g, '') || '';
 
           const username = toAddr.split('@')[0];
 
-          // Find recruiter by matching the username part of their profile email
           const recruiter = db.prepare(
             `SELECT * FROM users WHERE lower(substr(email, 1, instr(email,'@')-1)) = ?`
           ).get(username);
@@ -38,7 +41,6 @@ module.exports = function startSmtpInbound(db) {
             return callback();
           }
 
-          // Find driver by their email address
           const driver = db.prepare(
             `SELECT * FROM drivers WHERE lower(email) = ?`
           ).get(fromAddr);
@@ -48,12 +50,33 @@ module.exports = function startSmtpInbound(db) {
             return callback();
           }
 
-          db.prepare(
-            `INSERT INTO emails (driver_id, recruiter_id, subject, body, direction, sent_at)
-             VALUES (?, ?, ?, ?, 'inbound', CURRENT_TIMESTAMP)`
-          ).run(driver.id, recruiter.id, subject, body.trim());
+          // Save image/file attachments (skip tiny signature images < 2 KB)
+          const savedFiles = [];
+          for (const att of (mail.attachments || [])) {
+            if (!att.content || att.content.length < 2048) continue;
+            const mime = att.contentType || 'application/octet-stream';
+            const isImage = mime.startsWith('image/');
+            const isDoc = /\/(pdf|msword|vnd\.(openxml|ms-excel))/.test(mime);
+            if (!isImage && !isDoc) continue;
 
-          console.log(`[SMTP] Inbound email saved: ${fromAddr} → ${toAddr} | "${subject}"`);
+            const ext = path.extname(att.filename || '') || (isImage ? '.jpg' : '.bin');
+            const savedName = `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`;
+            fs.writeFileSync(path.join(emailFilesDir, savedName), att.content);
+            savedFiles.push({
+              filename: att.filename || savedName,
+              path: `/uploads/email_files/${savedName}`,
+              mime,
+            });
+          }
+
+          const attachmentsJson = savedFiles.length > 0 ? JSON.stringify(savedFiles) : null;
+
+          db.prepare(
+            `INSERT INTO emails (driver_id, recruiter_id, subject, body, direction, attachments, sent_at)
+             VALUES (?, ?, ?, ?, 'inbound', ?, CURRENT_TIMESTAMP)`
+          ).run(driver.id, recruiter.id, subject, body.trim(), attachmentsJson);
+
+          console.log(`[SMTP] Saved inbound: ${fromAddr} → ${toAddr} | "${subject}" | ${savedFiles.length} file(s)`);
         } catch (e) {
           console.error('[SMTP] DB error:', e.message);
         }
