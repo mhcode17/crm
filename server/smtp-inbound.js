@@ -3,6 +3,20 @@ const { simpleParser } = require('mailparser');
 const path = require('path');
 const fs = require('fs');
 
+function cleanBody(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const out = [];
+  for (const line of lines) {
+    if (line.startsWith('>')) break;                        // quoted reply — stop
+    if (/^--\s*$/.test(line)) break;                       // signature separator — stop
+    if (/\[cid:[^\]]+\]/.test(line)) continue;             // CID image refs — skip
+    if (/^\[.*\]<https?:\/\//.test(line.trim())) continue; // [Logo]<url> — skip
+    out.push(line);
+  }
+  return out.join('\n').trimEnd();
+}
+
 module.exports = function startSmtpInbound(db) {
   const DOMAIN = process.env.EMAIL_SENDING_DOMAIN || 'contact.oneprimefleet.com';
   const emailFilesDir = path.join(__dirname, 'uploads/email_files');
@@ -28,7 +42,8 @@ module.exports = function startSmtpInbound(db) {
           const toAddr   = (session.envelope.rcptTo[0]?.address || '').toLowerCase();
           const fromAddr = (mail.from?.value[0]?.address || '').toLowerCase();
           const subject  = mail.subject || '(no subject)';
-          const body     = mail.text || mail.html?.replace(/<[^>]+>/g, '') || '';
+          const rawBody  = mail.text || mail.html?.replace(/<[^>]+>/g, '') || '';
+          const body     = cleanBody(rawBody);
 
           const username = toAddr.split('@')[0];
 

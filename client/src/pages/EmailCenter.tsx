@@ -378,16 +378,13 @@ export default function EmailCenter() {
                               </div>
                               <p className="text-xs text-gray-400">{format(new Date(m.sent_at), 'MMM d, h:mm a')}</p>
                             </div>
-                            <div className="px-4 py-2.5">
-                              <p className="text-xs font-semibold text-gray-500 mb-1.5">{m.subject}</p>
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
-                            </div>
                             {m.attachments && (() => {
                               const files = parseAttachments(m.attachments);
                               const images = files.filter(f => f.mime?.startsWith('image/'));
                               const docs   = files.filter(f => !f.mime?.startsWith('image/'));
+                              if (!images.length && !docs.length) return null;
                               return (
-                                <div className="px-4 pb-3 space-y-2">
+                                <div className="px-4 pt-2.5 pb-0 space-y-2">
                                   {images.length > 0 && (
                                     <div className="flex flex-wrap gap-2">
                                       {images.map((f, i) => (
@@ -409,6 +406,10 @@ export default function EmailCenter() {
                                 </div>
                               );
                             })()}
+                            <div className="px-4 py-2.5">
+                              <p className="text-xs font-semibold text-gray-500 mb-1.5">{m.subject}</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{m.body}</p>
+                            </div>
                           </div>
                         ) : (
                           /* Outbound — from recruiter */
