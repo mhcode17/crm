@@ -1,13 +1,6 @@
 import { useState, useRef } from 'react';
-import { Truck, CheckCircle, Upload, X, FileText, Phone, Star, DollarSign, MapPin, Shield, Clock, Send } from 'lucide-react';
+import { Truck, CheckCircle, Upload, X, FileText, Phone, Send } from 'lucide-react';
 import axios from 'axios';
-
-const BENEFITS = [
-  { icon: DollarSign, title: 'Top Pay',          desc: 'Competitive rates & weekly settlements' },
-  { icon: MapPin,     title: 'Great Routes',      desc: 'OTR, regional & local lanes available' },
-  { icon: Shield,     title: 'Full Benefits',     desc: 'Medical, dental & vision coverage' },
-  { icon: Clock,      title: 'Flexible Schedule', desc: 'Home time options for every driver' },
-];
 
 const STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 
@@ -177,28 +170,10 @@ export default function Apply() {
       </header>
 
       {/* Hero */}
-      <div className="max-w-2xl mx-auto px-6 pt-12 pb-8 text-center">
-        <div className="inline-flex items-center gap-2 bg-blue-600/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-5">
-          <Star size={12} className="text-blue-400 fill-blue-400" />
-          <span className="text-xs text-blue-300 font-medium">Now Hiring — CDL Drivers Nationwide</span>
-        </div>
+      <div className="max-w-2xl mx-auto px-6 pt-12 pb-4 text-center">
         <h1 className="text-3xl sm:text-4xl font-bold text-white mb-3 leading-tight">
           Drive with <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">One Prime Fleet</span>
         </h1>
-        <p className="text-slate-400 text-base max-w-lg mx-auto mb-8">
-          Submit your documents below and our team will reach out within 24 hours.
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
-          {BENEFITS.map(({ icon: Icon, title, desc }) => (
-            <div key={title} className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3 text-left">
-              <div className="w-8 h-8 bg-blue-600/20 border border-blue-500/20 rounded-xl flex items-center justify-center mb-2">
-                <Icon size={14} className="text-blue-400" />
-              </div>
-              <p className="text-white text-xs font-semibold mb-0.5">{title}</p>
-              <p className="text-slate-500 text-xs leading-relaxed">{desc}</p>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* Form */}
