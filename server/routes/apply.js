@@ -16,76 +16,85 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB per file
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (_, file, cb) => {
     const allowed = /jpeg|jpg|png|pdf|heic/i;
     cb(null, allowed.test(path.extname(file.originalname)));
   },
 });
 
+const docFields = upload.fields([
+  { name: 'cdl_front', maxCount: 1 },
+  { name: 'cdl_back',  maxCount: 1 },
+  { name: 'prev_cdl',  maxCount: 1 },
+  { name: 'med_card',  maxCount: 1 },
+  { name: 'documents', maxCount: 5 },
+]);
+
+const DOC_LABELS = {
+  cdl_front: 'CDL Front',
+  cdl_back:  'CDL Back',
+  prev_cdl:  'Previous CDL',
+  med_card:  'Medical Card',
+  documents: 'Document',
+};
+
 module.exports = function (db) {
   const router = express.Router();
 
-  function parseForm(req, res, next) {
+  router.post('/', (req, res, next) => {
     const ct = req.headers['content-type'] || '';
-    if (ct.includes('multipart/form-data')) {
-      upload.array('documents', 5)(req, res, next);
-    } else {
-      next(); // already parsed by express.urlencoded / express.json
-    }
-  }
-
-  // Public: POST /api/apply — no auth required
-  router.post('/', parseForm, (req, res) => {
-    const { name, email, phone, city, state, truck_type, license_class, experience_years, cdl_number, message, source } = req.body;
+    if (ct.includes('multipart/form-data')) return docFields(req, res, next);
+    next();
+  }, (req, res) => {
+    const { name, email, phone, city, state, truck_type, license_class,
+            experience_years, cdl_number, message, source, ssn } = req.body;
 
     if (!name?.trim() || !phone?.trim()) {
       return res.status(400).json({ error: 'Name and phone are required' });
     }
 
-    // Use provided source if valid, otherwise default to Organic
     const VALID_SOURCES = ['Facebook', 'Indeed', 'Organic', 'LinkedIn', 'Referral', 'Other'];
     const leadSource = VALID_SOURCES.includes(source) ? source : 'Organic';
+
+    const notes = [
+      cdl_number ? `CDL#: ${cdl_number}` : '',
+      ssn        ? `SSN: ${ssn}`          : '',
+      message    || '',
+    ].filter(Boolean).join('\n') || null;
 
     const result = db.prepare(`
       INSERT INTO leads (name, email, phone, city, state, truck_type, license_class, experience_years, notes, source, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available')
     `).run(
-      name.trim(),
-      email?.trim() || null,
-      phone.trim(),
-      city?.trim() || null,
-      state?.trim() || null,
-      truck_type || null,
-      license_class || null,
-      parseInt(experience_years) || 0,
-      [cdl_number ? `CDL#: ${cdl_number}` : '', message].filter(Boolean).join('\n') || null,
-      leadSource
+      name.trim(), email?.trim() || null, phone.trim(),
+      city?.trim() || null, state?.trim() || null,
+      truck_type || null, license_class || null,
+      parseInt(experience_years) || 0, notes, leadSource
     );
 
     const leadId = result.lastInsertRowid;
+    const insDoc = db.prepare('INSERT INTO lead_documents (lead_id, filename, original_name, mime_type, label) VALUES (?, ?, ?, ?, ?)');
 
-    // Save document references
-    if (req.files?.length) {
-      const insDoc = db.prepare('INSERT INTO lead_documents (lead_id, filename, original_name, mime_type) VALUES (?, ?, ?, ?)');
-      req.files.forEach(f => insDoc.run(leadId, f.filename, f.originalname, f.mimetype));
+    // Save named document fields
+    if (req.files) {
+      Object.entries(req.files).forEach(([field, files]) => {
+        files.forEach(f => insDoc.run(leadId, f.filename, f.originalname, f.mimetype, DOC_LABELS[field] || field));
+      });
     }
 
     res.status(201).json({
       success: true,
       reference: `ORG-${String(leadId).padStart(5, '0')}`,
       lead_id: leadId,
-      documents_uploaded: req.files?.length || 0,
+      documents_uploaded: Object.values(req.files || {}).flat().length,
     });
   });
 
-  // Get documents for a lead (requires auth — handled in leads routes)
   router.get('/documents/:leadId', (req, res) => {
-    const docs = db.prepare('SELECT * FROM lead_documents WHERE lead_id = ?').all(Number(req.params.leadId));
-    res.json(docs);
+    res.json(db.prepare('SELECT * FROM lead_documents WHERE lead_id = ?').all(Number(req.params.leadId)));
   });
 
-  // Download a document file
   router.get('/file/:filename', (req, res) => {
     const filePath = path.join(uploadsDir, req.params.filename);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
