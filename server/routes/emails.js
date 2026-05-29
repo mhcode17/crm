@@ -12,8 +12,8 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB per file
   fileFilter(_, file, cb) {
-    const allowed = /\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx)$/i;
-    cb(null, allowed.test(file.originalname));
+    const allowed = /\.(jpg|jpeg|png|gif|webp|heic|heif|pdf|doc|docx|xls|xlsx)$/i;
+    cb(null, allowed.test(file.originalname) || file.mimetype.startsWith('image/'));
   }
 });
 

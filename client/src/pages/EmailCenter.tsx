@@ -148,13 +148,15 @@ export default function EmailCenter() {
       fd.append('subject', subject);
       fd.append('body', body);
       attachFiles.forEach(a => fd.append('attachments', a.file));
-      const r = await api.post('/emails/send', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const r = await api.post('/emails/send', fd);
       if (r.data.mock) toast.success('Email saved (mock mode)');
       else toast.success('Email sent!');
       setSubject('');
       setBody('');
       setAttachFiles([]);
-      setMessages(m => [...m, r.data]);
+      // Reload thread from server so attachments render correctly
+      const fresh = await api.get('/emails', { params: { driver_id: selected.driver_id } });
+      setMessages(fresh.data);
       loadConversations();
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err: any) {
